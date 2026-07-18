@@ -71,9 +71,20 @@ html, body {
 
 .player-rows { display:flex; flex-direction:column; gap:8px; }
 .player-row {
-  display:flex; align-items:center; gap:10px;
+  display:flex; flex-direction:column; gap:6px;
   background:rgba(0,0,0,0.18); border-radius:10px; padding:8px 10px;
 }
+.player-row-top { display:flex; align-items:center; gap:10px; }
+.tribe-seg { display:flex; gap:4px; overflow-x:auto; padding-bottom:2px; }
+.tribe-seg button {
+  flex:none; min-width:52px;
+  border:2px solid transparent; border-radius:8px;
+  background:rgba(255,255,255,0.08); color:#eee; cursor:pointer;
+  font-size:0.95rem; padding:3px 4px; line-height:1.1; text-align:center;
+}
+.tribe-seg button small { display:block; font-size:0.55rem; color:#9fb6c9; }
+.tribe-seg button.on { border-color:#ffd27f; background:rgba(255,210,127,0.16); }
+.tribe-seg button.on small { color:#ffd27f; }
 .pdot { width:16px; height:16px; border-radius:50%; flex:none; border:2px solid rgba(255,255,255,0.6); }
 .pname { flex:1; }
 .pname small { color:#9fb6c9; }
@@ -99,6 +110,16 @@ html, body {
 .btn.small { padding:8px 12px; font-size:0.85rem; width:auto; display:inline-block; margin-top:0; background:#3b6d99; }
 .btn.danger { background:#a83232; }
 .btn[disabled] { opacity:0.45; }
+
+#panel-load { grid-column: 1 / -1; }
+.save-list { display:flex; flex-direction:column; gap:8px; }
+.save-slot {
+  display:flex; align-items:center; gap:10px;
+  background:rgba(0,0,0,0.2); border-radius:10px; padding:8px 12px;
+  text-align:left;
+}
+.save-info { flex:1; font-size:0.85rem; line-height:1.35; }
+.save-info small { color:#9fb6c9; }
 
 .setup-foot { margin-top:16px; color:#b8cddf; font-size:0.85rem; }
 .setup-foot summary { cursor:pointer; padding:8px 0; color:#cfe3f5; }
@@ -198,6 +219,12 @@ html, body {
   background:#1c2c3c; border:1px solid rgba(255,255,255,0.2);
   border-radius:16px; padding:26px; width:340px; max-width:88%;
   text-align:center;
+  max-height:86%; overflow-y:auto;
 }
+.overlay-box.wide { width:440px; }
 .overlay-box h2 { margin-bottom:8px; font-size:1.5rem; }
+.overlay-box h3 { margin:16px 0 8px; font-size:0.95rem; color:#cfe3f5; text-align:left; }
 .overlay-box p { color:#b8cddf; margin-bottom:6px; }
+.seg.center { justify-content:center; }
+
+#tribe-ind { font-size:1.2rem; padding:0 2px; flex:none; }

@@ -32,7 +32,7 @@ const Game = (() => {
         res[r] = CFG.START_RES[r] * (po.human ? 1 : st.diff.resMult) | 0;
       }
       st.players.push({
-        id: i, human: po.human, team: po.team,
+        id: i, human: po.human, team: po.team, tribe: po.tribe,
         name: po.human ? 'Du' : CFG.PLAYER_NAMES[i],
         color: CFG.COLORS[i],
         res, prodMult: po.human ? 1 : diff.prodMult,
@@ -45,6 +45,46 @@ const Game = (() => {
 
     recomputeTerritory();
     return st;
+  }
+
+  /* Gespeicherten Spielstand wiederherstellen (Gegenstück zu SaveGame.snapshot). */
+  function restore(s) {
+    st = {
+      opts: s.opts, diff: CFG.DIFF[s.opts.difficulty],
+      w: s.w, h: s.h,
+      terrain: Uint8Array.from(s.terrain),
+      trees: Uint8Array.from(s.trees),
+      owner: new Int8Array(s.w * s.h).fill(-1),
+      buildings: s.buildings, units: s.units,
+      players: s.players.map(p => ({ ...p, ai: p.human ? null : (p.ai || AI.newMemory()) })),
+      time: s.time, speed: 1, over: s.over || null,
+      nextId: s.nextId,
+      dirty: new Set(), territoryDirty: true,
+      regrowTimer: 0, toast: null,
+    };
+    recomputeTerritory();
+    return st;
+  }
+
+  /* ------------------------------------------------ Völker */
+
+  function tribeOf(pid) {
+    return CFG.TRIBES[st.players[pid].tribe] || CFG.TRIBES.roemer;
+  }
+
+  /* Baukosten inkl. Volks-Rabatt. */
+  function tribeCost(pid, type) {
+    const cost = { ...CFG.BUILDINGS[type].cost };
+    const off = tribeOf(pid).bonus.cost?.[type];
+    if (off) for (const [r, n] of Object.entries(off)) cost[r] = Math.max(0, (cost[r] || 0) - n);
+    return cost;
+  }
+
+  /* Gebietsradius inkl. Volks-Bonus. */
+  function claimOf(b) {
+    const def = CFG.BUILDINGS[b.type];
+    if (!def.claim) return 0;
+    return def.claim + (tribeOf(b.owner).bonus.claim?.[b.type] || 0);
   }
 
   /* ------------------------------------------------ Hilfen */
@@ -95,15 +135,16 @@ const Game = (() => {
       if (def.terrainNeed.t === CFG.T.WATER) return 'Kein Wasser in der Nähe';
       return 'Kein Berg in der Nähe';
     }
-    if (!canAfford(st.players[pid], def.cost)) return 'Zu wenig Rohstoffe';
+    if (!canAfford(st.players[pid], tribeCost(pid, type))) return 'Zu wenig Rohstoffe';
     return null;
   }
 
   function addBuilding(pid, type, x, y, instant) {
     const def = CFG.BUILDINGS[type];
+    const hp = Math.round(def.hp * (tribeOf(pid).bonus.buildingHp || 1));
     const b = {
       id: st.nextId++, type, owner: pid, x, y,
-      hp: def.hp, maxHp: def.hp,
+      hp, maxHp: hp,
       done: !!instant, progress: instant ? 1 : 0,
       timer: def.interval || 0, working: false, alive: true,
     };
@@ -116,7 +157,7 @@ const Game = (() => {
   function tryBuild(pid, type, x, y) {
     const err = placeError(pid, type, x, y);
     if (err) return err;
-    pay(st.players[pid], CFG.BUILDINGS[type].cost);
+    pay(st.players[pid], tribeCost(pid, type));
     addBuilding(pid, type, x, y, false);
     return null;
   }
@@ -169,7 +210,7 @@ const Game = (() => {
     for (const b of st.buildings) {
       const def = CFG.BUILDINGS[b.type];
       if (!b.alive || !b.done || !def.claim) continue;
-      const r = def.claim, r2 = r * r;
+      const r = claimOf(b), r2 = r * r;
       for (let y = Math.max(0, b.y - r); y <= Math.min(h - 1, b.y + r); y++) {
         for (let x = Math.max(0, b.x - r); x <= Math.min(w - 1, b.x + r); x++) {
           const d2 = (x - b.x) ** 2 + (y - b.y) ** 2;
@@ -280,10 +321,14 @@ const Game = (() => {
 
   function spawnSoldier(pid, x, y) {
     const spot = nearestWalkable(x, y + 1, 3) || { x, y };
+    const mult = tribeOf(pid).bonus.soldier || 1;
+    const hp = Math.round(CFG.SOLDIER.hp * mult);
     st.units.push({
       id: st.nextId++, owner: pid,
       x: spot.x + 0.5, y: spot.y + 0.5,
-      hp: CFG.SOLDIER.hp, maxHp: CFG.SOLDIER.hp,
+      hp, maxHp: hp,
+      dmgU: CFG.SOLDIER.dmgUnit * mult,
+      dmgB: CFG.SOLDIER.dmgBuilding * mult,
       path: null, pi: 0, tb: null, tu: null,
       cd: 0, scan: Math.random() * 0.5,
     });
@@ -357,7 +402,7 @@ const Game = (() => {
     const p = st.players[b.owner];
 
     if (!b.done) {
-      b.progress += dt / def.buildTime * p.prodMult;
+      b.progress += dt / (def.buildTime * (tribeOf(b.owner).bonus.buildTime || 1)) * p.prodMult;
       if (b.progress >= 1) {
         b.progress = 1; b.done = true;
         st.dirty.add(idx(b.x, b.y));
@@ -392,7 +437,8 @@ const Game = (() => {
     if (def.output) for (const [r, n] of Object.entries(def.output)) p.res[r] += n;
     if (def.spawns) spawnSoldier(b.owner, b.x, b.y);
     b.working = true;
-    b.timer = def.interval * (0.9 + Math.random() * 0.2);
+    const tribeMult = tribeOf(b.owner).bonus.interval?.[b.type] || 1;
+    b.timer = def.interval * tribeMult * (0.9 + Math.random() * 0.2);
   }
 
   function findTree(b) {
@@ -454,8 +500,8 @@ const Game = (() => {
         }
       }
 
-      if (tgtU) { engage(u, tgtU.x, tgtU.y, dt, () => { hitUnit(tgtU, S.dmgUnit); }); continue; }
-      if (tgtB) { engage(u, tgtB.x + 0.5, tgtB.y + 0.5, dt, () => { hitBuilding(tgtB, S.dmgBuilding); }); continue; }
+      if (tgtU) { engage(u, tgtU.x, tgtU.y, dt, () => { hitUnit(tgtU, u.dmgU || S.dmgUnit); }); continue; }
+      if (tgtB) { engage(u, tgtB.x + 0.5, tgtB.y + 0.5, dt, () => { hitBuilding(tgtB, u.dmgB || S.dmgBuilding); }); continue; }
       if (u.path) followPath(u, dt);
     }
     st.units = st.units.filter(u => u.hp > 0);
@@ -530,9 +576,9 @@ const Game = (() => {
   /* ------------------------------------------------ API */
 
   return {
-    newGame, update, tryBuild, placeError, demolish,
+    newGame, restore, update, tryBuild, placeError, demolish,
     commandUnits, countPop, maxPop, buildingAt, astar,
-    isEnemy, hasTerrainNear, canAfford,
+    isEnemy, hasTerrainNear, canAfford, tribeOf, tribeCost,
     get st() { return st; },
     idx, inB, walkable,
   };

@@ -47,7 +47,8 @@
           </div>
         </div>
         <div id="player-rows" class="player-rows"></div>
-        <p class="hint">Spieler im selben Team sind verbündet. Für ein Spiel braucht es mindestens zwei verschiedene Teams.</p>
+        <p class="hint">Spieler im selben Team sind verbündet. Für ein Spiel braucht es mindestens zwei verschiedene Teams.
+           Jeder Spieler wählt außerdem sein Volk – jedes Volk hat einen eigenen Baustil und Bonus.</p>
         <p id="team-warn" class="warn hidden">⚠️ Alle Spieler sind im selben Team – so gibt es keinen Gegner!</p>
       </section>
 
@@ -59,6 +60,11 @@
           <button data-d="schwer">😈 Schwer<small>Schnelle, aggressive Gegner</small></button>
         </div>
         <button id="btn-start" class="btn big">▶ Spiel starten</button>
+      </section>
+
+      <section class="panel" id="panel-load">
+        <h2>💾 Spielstand laden</h2>
+        <div id="save-list" class="save-list"></div>
       </section>
     </div>
 
@@ -80,10 +86,12 @@
                Zerstöre alle gegnerischen Hauptquartiere, um zu gewinnen!</p>
           </div>
           <div>
-            <h3>Steuerung</h3>
+            <h3>Steuerung &amp; Speichern</h3>
             <p>Ziehen = Karte bewegen, Kneifen = Zoomen.<br>
                Gebäude unten antippen, dann auf ein freies Feld tippen.<br>
-               ⚔️-Knopf wählt alle Soldaten, dann Ziel antippen.</p>
+               ⚔️-Knopf wählt alle Soldaten, dann Ziel antippen.<br>
+               Im Pausemenü (☰) kannst du speichern; zusätzlich sichert das Spiel
+               automatisch alle 5/10/15 Minuten.</p>
           </div>
         </div>
       </details>
@@ -97,6 +105,7 @@
 
   <div id="topbar">
     <button id="btn-menu" class="hudbtn">☰</button>
+    <span id="tribe-ind" title="Dein Volk"></span>
     <div id="resbar"></div>
     <div id="popbar" title="Soldaten / Wohnraum">👥 <span id="pop-now">0</span>/<span id="pop-max">0</span></div>
     <button id="btn-army" class="hudbtn">⚔️ <span id="army-count">0</span></button>
@@ -121,9 +130,17 @@
   <div id="toast" class="hidden"></div>
 
   <div id="gamemenu" class="overlay hidden">
-    <div class="overlay-box">
+    <div class="overlay-box wide">
       <h2>Pause</h2>
       <button id="btn-resume" class="btn">Weiterspielen</button>
+      <h3>💾 Speichern</h3>
+      <div id="save-slots" class="save-list"></div>
+      <h3>⏱️ Automatisch speichern alle …</h3>
+      <div class="seg center" id="seg-autosave">
+        <button data-m="5">5 min</button>
+        <button data-m="10">10 min</button>
+        <button data-m="15">15 min</button>
+      </div>
       <button id="btn-quit" class="btn danger">Spiel beenden</button>
     </div>
   </div>
@@ -139,6 +156,7 @@
 
 <script src="js/config.js"></script>
 <script src="js/map.js"></script>
+<script src="js/save.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/render.js"></script>

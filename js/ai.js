@@ -53,8 +53,7 @@ const AI = (() => {
       const key = type + want;
       if (mem.skip[key] && mem.skip[key] > st.time) continue;
 
-      const def = CFG.BUILDINGS[type];
-      if (!Game.canAfford(p, def.cost)) return;   // sparen, Reihenfolge einhalten
+      if (!Game.canAfford(p, Game.tribeCost(p.id, type))) return;   // sparen, Reihenfolge einhalten
 
       const spot = findSpot(p, type);
       if (!spot) {

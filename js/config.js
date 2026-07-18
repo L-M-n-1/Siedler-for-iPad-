@@ -25,6 +25,39 @@ const CFG = {
   COLORS_DARK:  ['#2a5da0', '#8f2c2c', '#27793a', '#94762a'],
   PLAYER_NAMES: ['Blau', 'Rot', 'Grün', 'Gelb'],
 
+  /* Völker: Baustil (Wand-/Dachfarbe, Dachform) und Spielboni.
+     bonus-Felder (alle optional):
+       buildTime   – Faktor auf Bauzeit (kleiner = schneller)
+       soldier     – Faktor auf Soldaten-HP und -Schaden
+       buildingHp  – Faktor auf Gebäude-HP
+       interval    – { Gebäudetyp: Faktor } auf Produktionstakt
+       cost        – { Gebäudetyp: { Ware: Abzug } } Baukosten-Rabatt
+       claim       – { Gebäudetyp: +Radius } Gebietsradius-Bonus */
+  TRIBES: {
+    roemer:   { name: 'Römer',    icon: '🏛️', desc: 'Baumeister: −15 % Bauzeit',
+                style: { wall: '#e3d9c6', roof: '#b04a38', form: 'walm' },
+                bonus: { buildTime: 0.85 } },
+    wikinger: { name: 'Wikinger', icon: '🐺', desc: 'Krieger: Soldaten +20 % Stärke',
+                style: { wall: '#8a6f4d', roof: '#4e5d3a', form: 'sattel' },
+                bonus: { soldier: 1.2 } },
+    maya:     { name: 'Maya',     icon: '🌽', desc: 'Bauern: Landwirtschaft 20 % schneller',
+                style: { wall: '#c9b28a', roof: '#7d8a5a', form: 'stufen' },
+                bonus: { interval: { bauernhof: 0.8, muehle: 0.8, baeckerei: 0.8 } } },
+    trojaner: { name: 'Trojaner', icon: '🐴', desc: 'Verteidiger: Gebäude +25 % Lebenspunkte',
+                style: { wall: '#b8b3a6', roof: '#6d7b8a', form: 'zinnen' },
+                bonus: { buildingHp: 1.25 } },
+    aegypter: { name: 'Ägypter',  icon: '🐪', desc: 'Steinmetze: Steinbruch 25 % schneller, Wachturm billiger',
+                style: { wall: '#dbc48f', roof: '#c8a44e', form: 'flach' },
+                bonus: { interval: { steinbruch: 0.75 }, cost: { wachturm: { stein: 1 } } } },
+    chinesen: { name: 'Chinesen', icon: '🏮', desc: 'Ausbilder: Kaserne 25 % schneller',
+                style: { wall: '#a63c32', roof: '#3d5a45', form: 'pagode' },
+                bonus: { interval: { kaserne: 0.75 } } },
+    nubier:   { name: 'Nubier',   icon: '🪘', desc: 'Siedler: Wachtürme +1 Radius, Wohnhaus billiger',
+                style: { wall: '#c77f4f', roof: '#8a5a33', form: 'kuppel' },
+                bonus: { claim: { wachturm: 1 }, cost: { wohnhaus: { bretter: 1 } } } },
+  },
+  TRIBE_KEYS: ['roemer', 'wikinger', 'maya', 'trojaner', 'aegypter', 'chinesen', 'nubier'],
+
   /* Gebäude. terrainNeed: {t, r} = Geländeart im Radius r nötig.
      input/output: Warenumsatz je Produktionstakt (interval Sekunden). */
   BUILDINGS: {

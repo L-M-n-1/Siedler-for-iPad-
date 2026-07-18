@@ -12,6 +12,7 @@ const UI = (() => {
     seed: (Math.random() * 1e9) | 0,
     count: 3,
     teams: [1, 2, 3, 4],
+    tribes: ['zufall', 'zufall', 'zufall', 'zufall'],
     difficulty: 'mittel',
   };
 
@@ -64,6 +65,7 @@ const UI = (() => {
 
     buildPlayerRows();
     refreshPreview();
+    renderSaveList();
   }
 
   function buildPlayerRows() {
@@ -76,9 +78,12 @@ const UI = (() => {
       row.className = 'player-row';
       const who = i === 0 ? 'Du' : `Computer (${CFG.PLAYER_NAMES[i]})`;
       row.innerHTML = `
-        <span class="pdot" style="background:${CFG.COLORS[i]}"></span>
-        <span class="pname">${who}</span>
-        <span class="team-seg" data-p="${i}"></span>`;
+        <div class="player-row-top">
+          <span class="pdot" style="background:${CFG.COLORS[i]}"></span>
+          <span class="pname">${who}</span>
+          <span class="team-seg" data-p="${i}"></span>
+        </div>
+        <div class="tribe-seg" data-p="${i}"></div>`;
       const seg = row.querySelector('.team-seg');
       for (let t = 1; t <= setup.count; t++) {
         const tb = document.createElement('button');
@@ -90,6 +95,20 @@ const UI = (() => {
           validateTeams();
         };
         seg.appendChild(tb);
+      }
+      const tseg = row.querySelector('.tribe-seg');
+      const tribeChoices = ['zufall', ...CFG.TRIBE_KEYS];
+      for (const tk of tribeChoices) {
+        const tb = document.createElement('button');
+        const info = tk === 'zufall' ? { icon: '🎲', name: 'Zufall' } : CFG.TRIBES[tk];
+        tb.innerHTML = `${info.icon}<small>${info.name}</small>`;
+        tb.title = tk === 'zufall' ? 'Zufälliges Volk' : CFG.TRIBES[tk].desc;
+        if (setup.tribes[i] === tk) tb.classList.add('on');
+        tb.onclick = () => {
+          setup.tribes[i] = tk;
+          tseg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === tb));
+        };
+        tseg.appendChild(tb);
       }
       wrap.appendChild(row);
     }
@@ -114,16 +133,39 @@ const UI = (() => {
 
   function startGame() {
     if (!validateTeams()) return;
+    // Völker auflösen: „Zufall" → konkretes Volk (bevorzugt noch nicht vergebene)
+    const taken = setup.tribes.slice(0, setup.count).filter(t => t !== 'zufall');
     const players = [];
     for (let i = 0; i < setup.count; i++) {
-      players.push({ human: i === 0, team: setup.teams[i] });
+      let tribe = setup.tribes[i];
+      if (tribe === 'zufall') {
+        const free = CFG.TRIBE_KEYS.filter(k => !taken.includes(k));
+        const pool = free.length ? free : CFG.TRIBE_KEYS;
+        tribe = pool[(Math.random() * pool.length) | 0];
+        taken.push(tribe);
+      }
+      players.push({ human: i === 0, team: setup.teams[i], tribe });
     }
     Game.newGame({
       mapId: setup.mapId, seed: setup.seed,
       players, difficulty: setup.difficulty,
     });
+    enterGame();
+  }
+
+  function loadGame(slot) {
+    const data = SaveGame.load(slot);
+    if (!data) { renderSaveList(); return; }
+    Game.restore(data.state);
+    enterGame();
+    toast('💾 Spielstand geladen');
+  }
+
+  /* Gemeinsamer Einstieg für neues und geladenes Spiel. */
+  function enterGame() {
     placing = null; selected = []; infoBuilding = null; endShown = false;
     Main.speed = 1;
+    Main.resetAutosave();
     $('btn-speed').textContent = '▶ 1×';
     $('setup').classList.add('hidden');
     $('game').classList.remove('hidden');
@@ -133,16 +175,86 @@ const UI = (() => {
     Render.startGame();
     buildResBar();
     buildBuildBar();
+    const tribe = CFG.TRIBES[Game.st.players[0].tribe];
+    $('tribe-ind').textContent = tribe ? tribe.icon : '';
+    $('tribe-ind').title = tribe ? `${tribe.name} – ${tribe.desc}` : '';
     updateHUD(true);
     Main.running = true;
   }
 
   function quitToMenu() {
+    if (Game.st && !Game.st.over) SaveGame.save('auto');   // nichts verlieren
     Main.running = false;
     $('game').classList.add('hidden');
     $('setup').classList.remove('hidden');
     setup.seed = (Math.random() * 1e9) | 0;   // nächste Runde: frische Karte
     refreshPreview();
+    renderSaveList();
+  }
+
+  /* ------------------------------------------------ Spielstände */
+
+  function slotLabel(slot) {
+    return slot === 'auto' ? 'Autosave' : 'Slot ' + slot;
+  }
+
+  function slotMetaText(m) {
+    return `${m.map} · ${m.minutes} min · ${SaveGame.fmtDate(m.date)}<br><small>${m.players}</small>`;
+  }
+
+  /* Liste im Startbildschirm: Laden und Löschen. */
+  function renderSaveList() {
+    const wrap = $('save-list');
+    wrap.innerHTML = '';
+    let any = false;
+    for (const slot of SaveGame.SLOTS) {
+      const m = SaveGame.info(slot);
+      if (!m) continue;
+      any = true;
+      const row = document.createElement('div');
+      row.className = 'save-slot';
+      row.innerHTML = `<div class="save-info"><b>${slotLabel(slot)}</b><br>${slotMetaText(m)}</div>`;
+      const load = document.createElement('button');
+      load.className = 'btn small';
+      load.textContent = '▶ Laden';
+      load.onclick = () => loadGame(slot);
+      const del = document.createElement('button');
+      del.className = 'btn small danger';
+      del.textContent = '🗑';
+      del.title = 'Spielstand löschen';
+      del.onclick = () => { SaveGame.remove(slot); renderSaveList(); };
+      row.appendChild(load);
+      row.appendChild(del);
+      wrap.appendChild(row);
+    }
+    if (!any) wrap.innerHTML = '<p class="hint">Noch keine Spielstände vorhanden. Im Spiel über das Pausemenü (☰) speichern – zusätzlich wird automatisch gesichert.</p>';
+  }
+
+  /* Slots im Pausemenü: antippen = speichern/überschreiben. */
+  function renderSaveSlots() {
+    const wrap = $('save-slots');
+    wrap.innerHTML = '';
+    for (const slot of ['1', '2', '3']) {
+      const m = SaveGame.info(slot);
+      const row = document.createElement('div');
+      row.className = 'save-slot';
+      row.innerHTML = `<div class="save-info"><b>${slotLabel(slot)}</b><br>${m ? slotMetaText(m) : '<small>– leer –</small>'}</div>`;
+      const save = document.createElement('button');
+      save.className = 'btn small';
+      save.textContent = '💾 Speichern';
+      save.onclick = () => {
+        if (SaveGame.save(slot)) { toast(`💾 In ${slotLabel(slot)} gespeichert`); renderSaveSlots(); }
+        else toast('Speichern fehlgeschlagen');
+      };
+      row.appendChild(save);
+      wrap.appendChild(row);
+    }
+  }
+
+  function refreshAutosaveSeg() {
+    const min = SaveGame.getAutosaveMin();
+    $('seg-autosave').querySelectorAll('button').forEach(b =>
+      b.classList.toggle('on', +b.dataset.m === min));
   }
 
   /* ------------------------------------------------ HUD */
@@ -167,7 +279,8 @@ const UI = (() => {
       const b = document.createElement('button');
       b.className = 'bbtn';
       b.id = 'bb-' + type;
-      const cost = Object.entries(def.cost)
+      const cost = Object.entries(Game.tribeCost(0, type))
+        .filter(([, n]) => n > 0)
         .map(([r, n]) => `${n}${CFG.RES_INFO[r].icon}`).join(' ');
       b.innerHTML = `<span class="bico">${def.icon}</span>${def.name}<span class="bcost">${cost}</span>`;
       b.onclick = () => togglePlacing(type);
@@ -178,7 +291,7 @@ const UI = (() => {
   function togglePlacing(type) {
     if (placing === type) { cancelModes(); return; }
     const p = Game.st.players[0];
-    if (!Game.canAfford(p, CFG.BUILDINGS[type].cost)) {
+    if (!Game.canAfford(p, Game.tribeCost(0, type))) {
       toast('Zu wenig Rohstoffe für ' + CFG.BUILDINGS[type].name);
       return;
     }
@@ -234,7 +347,7 @@ const UI = (() => {
 
     // Baubare Gebäude hervorheben
     for (const type of CFG.BUILD_ORDER) {
-      $('bb-' + type).classList.toggle('cant', !Game.canAfford(p, CFG.BUILDINGS[type].cost));
+      $('bb-' + type).classList.toggle('cant', !Game.canAfford(p, Game.tribeCost(0, type)));
     }
 
     selected = selected.filter(u => u.hp > 0);
@@ -275,7 +388,8 @@ const UI = (() => {
     if (!b || !b.alive) { hideInfo(); return; }
     const def = CFG.BUILDINGS[b.type];
     const p = Game.st.players[b.owner];
-    $('info-title').textContent = `${def.icon} ${def.name} (${p.name})`;
+    const tribe = CFG.TRIBES[p.tribe];
+    $('info-title').textContent = `${def.icon} ${def.name} (${p.name}${tribe ? ' – ' + tribe.name : ''})`;
     let body = def.desc + '<br><br>';
     if (!b.done) {
       body += `🏗️ Im Bau – ${Math.round(b.progress * 100)} %`;
@@ -297,8 +411,17 @@ const UI = (() => {
   function initGameUI() {
     $('btn-menu').onclick = () => {
       Main.paused = true;
+      renderSaveSlots();
+      refreshAutosaveSeg();
       $('gamemenu').classList.remove('hidden');
     };
+    $('seg-autosave').querySelectorAll('button').forEach(b => {
+      b.onclick = () => {
+        SaveGame.setAutosaveMin(+b.dataset.m);
+        Main.resetAutosave();
+        refreshAutosaveSeg();
+      };
+    });
     $('btn-resume').onclick = () => {
       Main.paused = false;
       $('gamemenu').classList.add('hidden');
