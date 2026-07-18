@@ -1,0 +1,14 @@
+{
+  "name": "Neue Siedler – Freies Spiel",
+  "short_name": "Neue Siedler",
+  "description": "Aufbaustrategie im Stil klassischer Siedler-Spiele, optimiert für das iPad.",
+  "lang": "de",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1a2633",
+  "theme_color": "#1a2633",
+  "icons": [
+    { "src": "icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

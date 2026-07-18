@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Neue Siedler">
+<title>Neue Siedler – Freies Spiel</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ==================== SETUP / FREIES SPIEL ==================== -->
+<div id="setup" class="screen">
+  <div class="setup-inner">
+    <header class="setup-head">
+      <h1>🏰 Neue Siedler</h1>
+      <p class="subtitle">Freies Spiel – Aufbaustrategie für das iPad</p>
+    </header>
+
+    <div class="setup-grid">
+      <section class="panel" id="panel-map">
+        <h2>Karte</h2>
+        <div id="map-list" class="map-list"></div>
+        <div class="map-preview-row">
+          <canvas id="map-preview" width="160" height="160"></canvas>
+          <div class="map-preview-info">
+            <div id="map-desc" class="map-desc"></div>
+            <button id="btn-reroll" class="btn small">🔄 Neue Karte würfeln</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-players">
+        <h2>Spieler</h2>
+        <div class="row">
+          <span class="lbl">Anzahl Spieler</span>
+          <div class="seg" id="seg-count">
+            <button data-n="2">2</button>
+            <button data-n="3" class="on">3</button>
+            <button data-n="4">4</button>
+          </div>
+        </div>
+        <div id="player-rows" class="player-rows"></div>
+        <p class="hint">Spieler im selben Team sind verbündet. Für ein Spiel braucht es mindestens zwei verschiedene Teams.</p>
+        <p id="team-warn" class="warn hidden">⚠️ Alle Spieler sind im selben Team – so gibt es keinen Gegner!</p>
+      </section>
+
+      <section class="panel" id="panel-diff">
+        <h2>Schwierigkeit</h2>
+        <div class="seg vertical" id="seg-diff">
+          <button data-d="leicht">🙂 Leicht<small>Gemütliche Gegner, viel Zeit zum Aufbauen</small></button>
+          <button data-d="mittel" class="on">😐 Mittel<small>Ausgewogene Gegner</small></button>
+          <button data-d="schwer">😈 Schwer<small>Schnelle, aggressive Gegner</small></button>
+        </div>
+        <button id="btn-start" class="btn big">▶ Spiel starten</button>
+      </section>
+    </div>
+
+    <footer class="setup-foot">
+      <details>
+        <summary>Kurzanleitung</summary>
+        <div class="help-cols">
+          <div>
+            <h3>Wirtschaft</h3>
+            <p>🌲 Holzfäller → 🪚 Sägewerk liefert Bretter.<br>
+               🪨 Steinbruch braucht Berge in der Nähe.<br>
+               🎣 Fischer (am Wasser) und 🌾 Bauernhof → ⚙️ Mühle → 🍞 Bäckerei liefern Nahrung.<br>
+               ⛏️ Eisenmine (am Berg, braucht Nahrung) → 🔥 Schmelze → 🔨 Waffenschmiede liefert Waffen.</p>
+          </div>
+          <div>
+            <h3>Militär &amp; Sieg</h3>
+            <p>🛡️ Die Kaserne bildet aus Waffen + Nahrung Soldaten aus (🏠 Wohnhäuser erhöhen das Limit).<br>
+               🗼 Wachtürme erweitern dein Gebiet – gebaut werden kann nur auf eigenem Land.<br>
+               Zerstöre alle gegnerischen Hauptquartiere, um zu gewinnen!</p>
+          </div>
+          <div>
+            <h3>Steuerung</h3>
+            <p>Ziehen = Karte bewegen, Kneifen = Zoomen.<br>
+               Gebäude unten antippen, dann auf ein freies Feld tippen.<br>
+               ⚔️-Knopf wählt alle Soldaten, dann Ziel antippen.</p>
+          </div>
+        </div>
+      </details>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== SPIEL ==================== -->
+<div id="game" class="screen hidden">
+  <canvas id="world"></canvas>
+
+  <div id="topbar">
+    <button id="btn-menu" class="hudbtn">☰</button>
+    <div id="resbar"></div>
+    <div id="popbar" title="Soldaten / Wohnraum">👥 <span id="pop-now">0</span>/<span id="pop-max">0</span></div>
+    <button id="btn-army" class="hudbtn">⚔️ <span id="army-count">0</span></button>
+    <button id="btn-speed" class="hudbtn">▶ 1×</button>
+  </div>
+
+  <canvas id="minimap" width="140" height="140"></canvas>
+
+  <div id="banner" class="hidden"></div>
+
+  <div id="buildbar"></div>
+
+  <div id="infopanel" class="hidden">
+    <div id="info-title"></div>
+    <div id="info-body"></div>
+    <div class="info-btns">
+      <button id="btn-demolish" class="btn small danger">🧨 Abreißen</button>
+      <button id="btn-info-close" class="btn small">Schließen</button>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <div id="gamemenu" class="overlay hidden">
+    <div class="overlay-box">
+      <h2>Pause</h2>
+      <button id="btn-resume" class="btn">Weiterspielen</button>
+      <button id="btn-quit" class="btn danger">Spiel beenden</button>
+    </div>
+  </div>
+
+  <div id="endscreen" class="overlay hidden">
+    <div class="overlay-box">
+      <h2 id="end-title"></h2>
+      <p id="end-text"></p>
+      <button id="btn-end-menu" class="btn">Zurück zum Menü</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/map.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
