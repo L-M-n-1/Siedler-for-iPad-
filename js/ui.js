@@ -18,6 +18,7 @@ const UI = (() => {
 
   let placing = null;          // Gebäudetyp im Platzierungsmodus
   let selected = [];           // ausgewählte Soldaten
+  let geoMode = false;         // Geologe-Zielmodus
   let infoBuilding = null;
   let hudTimer = 0;
   let toastTimer = 0;
@@ -319,8 +320,10 @@ const UI = (() => {
   function cancelModes() {
     placing = null;
     selected = [];
+    geoMode = false;
     document.querySelectorAll('.bbtn').forEach(x => x.classList.remove('on'));
     $('btn-army').classList.remove('on');
+    $('btn-geologe').classList.remove('on');
     hideBanner();
   }
 
@@ -363,6 +366,9 @@ const UI = (() => {
     $('army-count').textContent = st.units.filter(u => u.owner === 0).length;
     const cb = $('carrierbar');
     if (cb) cb.innerHTML = `🧺 ${Game.carriersBusy(0)}/${Game.carrierCap(0)}`;
+    const dn = $('daynight');
+    if (dn) dn.textContent = Render.night > 0.6 ? '🌙' : Render.night > 0.3 ? '🌆' : '☀️';
+    $('btn-geologe').classList.toggle('cant', p.geoCd > 0);
 
     // Baubare Gebäude hervorheben
     for (const type of CFG.BUILD_ORDER) {
@@ -542,11 +548,18 @@ const UI = (() => {
     $('btn-army').onclick = () => {
       const mine = Game.st.units.filter(u => u.owner === 0);
       if (!mine.length) { toast('Du hast noch keine Soldaten. Baue eine Kaserne!'); return; }
-      placing = null;
-      document.querySelectorAll('.bbtn').forEach(x => x.classList.remove('on'));
+      cancelModes();
       selected = mine.slice();
       $('btn-army').classList.add('on');
       showBanner(`⚔️ ${mine.length} Soldaten ausgewählt – tippe auf ein Ziel`);
+    };
+
+    $('btn-geologe').onclick = () => {
+      if (geoMode) { cancelModes(); return; }
+      cancelModes();
+      geoMode = true;
+      $('btn-geologe').classList.add('on');
+      showBanner('🔍 Geologe: tippe auf ein Berggebiet, um Vorkommen zu suchen');
     };
 
     initPointer();
@@ -611,6 +624,14 @@ const UI = (() => {
     if (!Main.running || Main.paused || Game.st.over) return;
     const w = Render.screenToWorld(sx, sy);
     const tx = Math.floor(w.x / CFG.TS), ty = Math.floor(w.y / CFG.TS);
+
+    if (geoMode) {
+      const err = Game.dispatchGeologe(0, tx, ty);
+      if (err) { toast(err); return; }
+      toast('🔍 Geologe unterwegs zum Berg');
+      cancelModes();
+      return;
+    }
 
     if (placing) {
       const err = Game.tryBuild(0, placing, tx, ty);

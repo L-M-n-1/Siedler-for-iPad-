@@ -15,6 +15,7 @@ const Game = (() => {
       opts, diff,
       w: map.w, h: map.h,
       terrain: map.terrain, trees: map.trees,
+      deposit: map.deposit, found: new Uint8Array(map.w * map.h),
       owner: new Int8Array(map.w * map.h).fill(-1),
       buildings: [], units: [], carriers: [],
       players: [],
@@ -22,7 +23,7 @@ const Game = (() => {
       nextId: 1,
       dirty: new Set(),          // Kacheln, die neu gezeichnet werden müssen
       territoryDirty: true,
-      regrowTimer: 0, towerTimer: 0,
+      regrowTimer: 0, towerTimer: 0, promoteTimer: 0,
       toast: null,
     };
 
@@ -36,7 +37,7 @@ const Game = (() => {
         name: po.human ? 'Du' : CFG.PLAYER_NAMES[i],
         color: CFG.COLORS[i],
         res, prodMult: po.human ? 1 : diff.prodMult,
-        defeated: false,
+        defeated: false, geoCd: 0,
         ai: po.human ? null : AI.newMemory(),
       });
       const s = map.starts[i];
@@ -54,13 +55,15 @@ const Game = (() => {
       w: s.w, h: s.h,
       terrain: Uint8Array.from(s.terrain),
       trees: Uint8Array.from(s.trees),
+      deposit: Int8Array.from(s.deposit),
+      found: Uint8Array.from(s.found),
       owner: new Int8Array(s.w * s.h).fill(-1),
       buildings: s.buildings, units: s.units, carriers: [],
-      players: s.players.map(p => ({ ...p, ai: p.human ? null : (p.ai || AI.newMemory()) })),
+      players: s.players.map(p => ({ ...p, geoCd: p.geoCd || 0, ai: p.human ? null : (p.ai || AI.newMemory()) })),
       time: s.time, speed: 1, over: s.over || null,
       nextId: s.nextId,
       dirty: new Set(), territoryDirty: true,
-      regrowTimer: 0, towerTimer: 0, toast: null,
+      regrowTimer: 0, towerTimer: 0, promoteTimer: 0, toast: null,
     };
     // In-Flight-Lieferungen wurden beim Speichern dem Pool gutgeschrieben → Träger neu starten
     for (const b of st.buildings) { b.hasCarrier = false; }
@@ -125,6 +128,32 @@ const Game = (() => {
     return false;
   }
 
+  /* Gefundenes Vorkommen eines Typs in Reichweite r? (für Goldmine). */
+  function hasFoundDeposit(x, y, depType, r) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (!inB(nx, ny) || dx * dx + dy * dy > r * r) continue;
+        const i = idx(nx, ny);
+        if (st.found[i] && st.deposit[i] === depType) return true;
+      }
+    }
+    return false;
+  }
+
+  /* Reiches (gefundenes) Vorkommen zur Ware in Reichweite → Ertragsbonus für Minen. */
+  function hasRichDeposit(x, y, res, r) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (!inB(nx, ny) || dx * dx + dy * dy > r * r) continue;
+        const i = idx(nx, ny);
+        if (st.found[i] && st.deposit[i] >= 0 && CFG.DEP_INFO[st.deposit[i]].res === res) return true;
+      }
+    }
+    return false;
+  }
+
   function canAfford(p, cost) {
     return Object.entries(cost).every(([r, n]) => p.res[r] >= n);
   }
@@ -146,6 +175,10 @@ const Game = (() => {
       if (def.terrainNeed.trees) return 'Keine Bäume in der Nähe';
       if (def.terrainNeed.t === CFG.T.WATER) return 'Kein Wasser in der Nähe';
       return 'Kein Berg in der Nähe';
+    }
+    if (def.needDeposit !== undefined &&
+        !hasFoundDeposit(x, y, def.needDeposit, (def.terrainNeed && def.terrainNeed.r) || 2)) {
+      return 'Kein gefundenes Goldvorkommen – schick einen Geologen';
     }
     if (!canAfford(st.players[pid], tribeCost(pid, type))) return 'Zu wenig Rohstoffe';
     return null;
@@ -341,7 +374,7 @@ const Game = (() => {
     const mult = tribeOf(pid).bonus.soldier || 1;
     const hp = Math.round(S.hp * mult);
     st.units.push({
-      id: st.nextId++, owner: pid, type: type || 'lanze',
+      id: st.nextId++, owner: pid, type: type || 'lanze', rank: 0,
       x: spot.x + 0.5, y: spot.y + 0.5,
       hp, maxHp: hp,
       dmgU: S.dmgUnit * mult,
@@ -416,11 +449,39 @@ const Game = (() => {
     updateCarriers(dt);
     updateUnits(dt);
     towerDefense(dt);
+    promoteSoldiers(dt);
+
+    for (const p of st.players) if (p.geoCd > 0) p.geoCd -= dt;
 
     regrow(dt);
 
     for (const p of st.players) {
       if (!p.defeated && !p.human) AI.update(p, dt);
+    }
+  }
+
+  /* Goldmünzen befördern Soldaten in höhere Ränge (mehr Leben/Schaden). */
+  function promoteSoldiers(dt) {
+    st.promoteTimer -= dt;
+    if (st.promoteTimer > 0) return;
+    st.promoteTimer = CFG.PROMOTE_CD;
+    const maxRank = CFG.RANKS.length - 1;
+    for (const p of st.players) {
+      if (p.defeated || (p.res.gold || 0) < CFG.PROMOTE_COST) continue;
+      let target = null;
+      for (const u of st.units) {
+        if (u.owner !== p.id || (u.rank || 0) >= maxRank) continue;
+        if (!target || (u.rank || 0) < (target.rank || 0)) target = u;
+      }
+      if (!target) continue;
+      p.res.gold -= CFG.PROMOTE_COST;
+      const oldM = CFG.RANKS[target.rank || 0].mult;
+      target.rank = (target.rank || 0) + 1;
+      const f = CFG.RANKS[target.rank].mult / oldM;
+      target.maxHp = Math.round(target.maxHp * f);
+      target.hp = Math.round(target.hp * f);
+      target.dmgU *= f; target.dmgB *= f;
+      if (p.human) st.toast = { text: `🎖️ Soldat zum ${CFG.RANKS[target.rank].name} befördert!`, t: 3 };
     }
   }
 
@@ -481,18 +542,67 @@ const Game = (() => {
     });
   }
 
+  /* Geologe zu einem Berggebiet schicken; deckt dort Vorkommen auf. */
+  function geologeActive(pid) {
+    let n = 0;
+    for (const c of st.carriers) if (c.owner === pid && c.kind === 'geologe') n++;
+    return n;
+  }
+
+  function dispatchGeologe(pid, tx, ty) {
+    const p = st.players[pid];
+    if (p.geoCd > 0) return 'Geologe noch nicht bereit';
+    if (geologeActive(pid) >= CFG.GEOLOGE.maxActive) return 'Schon genug Geologen unterwegs';
+    if (!canAfford(p, CFG.GEOLOGE.cost)) return 'Zu wenig Nahrung für den Geologen';
+    const start = nearestStore(pid, tx, ty);
+    if (!start) return 'Kein Hauptquartier';
+    const goal = nearestWalkable(tx, ty, 4);
+    if (!goal) return 'Ziel nicht erreichbar';
+    const path = astar(start.x, start.y, goal.x, goal.y);
+    if (!path) return 'Kein Weg zum Berg';
+    pay(p, CFG.GEOLOGE.cost);
+    p.geoCd = CFG.GEOLOGE.cooldown;
+    st.carriers.push({
+      id: st.nextId++, owner: pid, kind: 'geologe',
+      tx, ty, x: start.x + 0.5, y: start.y + 0.5, path, pi: 0, speed: CFG.GEOLOGE.speed,
+    });
+    return null;
+  }
+
+  /* Vorkommen im Radius um (cx,cy) aufdecken. */
+  function prospect(pid, cx, cy) {
+    const r = CFG.GEOLOGE.radius;
+    let gold = false;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!inB(nx, ny) || dx * dx + dy * dy > r * r) continue;
+        const i = idx(nx, ny);
+        if (st.terrain[i] === CFG.T.MOUNTAIN && st.deposit[i] >= 0 && !st.found[i]) {
+          st.found[i] = 1; st.dirty.add(i);
+          if (st.deposit[i] === CFG.DEP.GOLD) gold = true;
+        }
+      }
+    }
+    if (gold && st.players[pid].human) st.toast = { text: '⛏️ Der Geologe hat ein Goldvorkommen entdeckt!', t: 4 };
+  }
+
   function updateCarriers(dt) {
     for (const c of st.carriers) {
       const wp = c.path[c.pi];
-      if (!wp) { c.done = true; continue; }
-      const d = Math.hypot(wp.x - c.x, wp.y - c.y);
-      const step = c.speed * dt;
-      if (d <= step) { c.x = wp.x; c.y = wp.y; c.pi++; if (c.pi >= c.path.length) c.done = true; }
-      else { c.x += (wp.x - c.x) / d * step; c.y += (wp.y - c.y) / d * step; }
+      if (!wp) { c.done = true; }
+      else {
+        const d = Math.hypot(wp.x - c.x, wp.y - c.y);
+        const step = c.speed * dt;
+        if (d <= step) { c.x = wp.x; c.y = wp.y; c.pi++; if (c.pi >= c.path.length) c.done = true; }
+        else { c.x += (wp.x - c.x) / d * step; c.y += (wp.y - c.y) / d * step; }
+      }
       if (c.done && c.kind === 'goods') {
         creditPool(st.players[c.owner], c.payload);
         const src = st.buildings.find(b => b.id === c.from);
         if (src) src.hasCarrier = false;
+      } else if (c.done && c.kind === 'geologe') {
+        prospect(c.owner, c.tx, c.ty);
       }
     }
     st.carriers = st.carriers.filter(c => !c.done);
@@ -576,7 +686,15 @@ const Game = (() => {
 
     if (def.input) pay(p, def.input);
     // Produktion landet im Ausgangslager (wird per Träger geliefert)
-    if (def.output) for (const [r, n] of Object.entries(def.output)) b.out[r] = (b.out[r] || 0) + n;
+    if (def.output) {
+      // Minen an gefundenen, reichen Vorkommen fördern mehr
+      const rich = def.terrainNeed && def.terrainNeed.t === CFG.T.MOUNTAIN;
+      for (const [r, n] of Object.entries(def.output)) {
+        let amt = n;
+        if (rich && hasRichDeposit(b.x, b.y, r, def.terrainNeed.r)) amt += 1;
+        b.out[r] = (b.out[r] || 0) + amt;
+      }
+    }
     if (def.makesTool) { const t = chooseTool(b); b.out[t] = (b.out[t] || 0) + 1; }
     b.working = true;
     const tribeMult = tribeOf(b.owner).bonus.interval?.[b.type] || 1;
@@ -791,6 +909,7 @@ const Game = (() => {
     commandUnits, countPop, maxPop, buildingAt, astar,
     isEnemy, hasTerrainNear, canAfford, tribeOf, tribeCost,
     spawnSoldier, sallyGarrison, carrierCap, carriersBusy, needsTool,
+    dispatchGeologe, geologeActive,
     get st() { return st; },
     idx, inB, walkable,
   };

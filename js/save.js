@@ -4,7 +4,7 @@
 const SaveGame = (() => {
 
   const SLOTS = ['1', '2', '3', 'auto'];
-  const VERSION = 2;                 // Modell mit Waren/Werkzeug/Trägern/Türmen
+  const VERSION = 3;                 // + Bergvorkommen, Gold/Beförderung, Geologe
   const key = slot => 'ns-save-' + slot;
 
   /* Serialisierbaren Spielzustand erzeugen (Typed Arrays → normale Arrays).
@@ -26,6 +26,8 @@ const SaveGame = (() => {
       w: st.w, h: st.h,
       terrain: Array.from(st.terrain),
       trees: Array.from(st.trees),
+      deposit: Array.from(st.deposit),
+      found: Array.from(st.found),
       time: st.time, nextId: st.nextId, over: st.over,
       players, buildings, units: st.units,
     };

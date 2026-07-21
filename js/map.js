@@ -108,7 +108,29 @@ const MapGen = (() => {
       ensureFeature(terrain, trees, w, h, st, rnd, 'mountain');
     }
 
-    return { w, h, terrain, trees, starts, preset: p };
+    const deposit = makeDeposits(rnd, w, h, terrain, p);
+
+    return { w, h, terrain, trees, deposit, starts, preset: p };
+  }
+
+  /* Versteckte Bergvorkommen: überwiegend Stein, Adern aus Eisen/Kohle,
+     seltene Gold-Cluster. -1 = kein Berg. Vom Geologen aufzudecken. */
+  function makeDeposits(rnd, w, h, terrain, p) {
+    const dep = new Int8Array(w * h).fill(-1);
+    const nVein = makeNoise(rnd, w, 5);      // Eisen/Kohle-Adern
+    const nGold = makeNoise(rnd, w, 3.5);    // Gold-Cluster
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (terrain[i] !== CFG.T.MOUNTAIN) continue;
+        const gv = nGold(x, y), vv = nVein(x, y);
+        if (gv > 0.80) dep[i] = CFG.DEP.GOLD;
+        else if (vv > 0.68) dep[i] = CFG.DEP.KOHLE;
+        else if (vv < 0.32) dep[i] = CFG.DEP.EISEN;
+        else dep[i] = CFG.DEP.STEIN;
+      }
+    }
+    return dep;
   }
 
   function clearArea(terrain, trees, w, h, cx, cy, r) {

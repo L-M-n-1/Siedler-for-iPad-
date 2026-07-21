@@ -220,6 +220,18 @@ const Render = (() => {
         g.closePath();
         g.fill();
       }
+      // Gefundenes Vorkommen: Schild mit Ressourcen-Icon
+      if (st.found[i] && st.deposit[i] >= 0) {
+        const info = CFG.DEP_INFO[st.deposit[i]];
+        g.fillStyle = '#6b4e2e';
+        g.fillRect(px + TS / 2 - 1, py + TS - 12, 2, 9);
+        g.fillStyle = '#e8dcc0';
+        g.fillRect(px + TS / 2 - 6, py + TS - 20, 12, 9);
+        g.strokeStyle = 'rgba(60,45,25,0.6)'; g.lineWidth = 1;
+        g.strokeRect(px + TS / 2 - 6, py + TS - 20, 12, 9);
+        g.font = '8px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(info.icon, px + TS / 2, py + TS - 15);
+      }
     }
 
     // Bäume (mit Schatten und zweistufiger Krone, leicht verstreut)
@@ -315,16 +327,29 @@ const Render = (() => {
     return { c, w: W / SS, h: H / SS };
   }
 
-  /* Normales Haus: Wandblock + volksspezifisches Dach. */
+  /* Normales Haus: Wandblock mit Seitenfläche (Extrusion) + volksspezifisches Dach. */
   function drawHouse(g, W, H, groundY, style, type) {
-    const wallW = W * 0.78, x0 = (W - wallW) / 2;
+    const wallW = W * 0.72, x0 = (W - wallW) / 2 - W * 0.03;
     const wallH = H * 0.40;
     const wallTop = groundY - wallH;
+    const depth = W * 0.12;
 
+    // rechte Seitenfläche (perspektivische Tiefe)
+    g.fillStyle = shade(style.wall, 0.62);
+    g.beginPath();
+    g.moveTo(x0 + wallW, wallTop);
+    g.lineTo(x0 + wallW + depth, wallTop + depth * 0.6);
+    g.lineTo(x0 + wallW + depth, groundY - depth * 0.4);
+    g.lineTo(x0 + wallW, groundY);
+    g.closePath(); g.fill();
+
+    // Frontwand mit Licht-/Schattenverlauf
     g.fillStyle = style.wall;
     g.fillRect(x0, wallTop, wallW, wallH);
-    g.fillStyle = shade(style.wall, 0.78);            // Schattenseite rechts
-    g.fillRect(x0 + wallW * 0.8, wallTop, wallW * 0.2, wallH);
+    g.fillStyle = shade(style.wall, 1.12);            // Lichtseite links
+    g.fillRect(x0, wallTop, wallW * 0.16, wallH);
+    g.fillStyle = shade(style.wall, 0.82);            // Schattenseite rechts
+    g.fillRect(x0 + wallW * 0.82, wallTop, wallW * 0.18, wallH);
     g.strokeStyle = 'rgba(40,30,20,0.5)';
     g.lineWidth = SS;
     g.strokeRect(x0, wallTop, wallW, wallH);
@@ -639,19 +664,91 @@ const Render = (() => {
     ctx.scale(cam.z, cam.z);
     ctx.translate(-cam.x, -cam.y);
 
+    updateDayNight();
+
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(terrainC, 0, 0);
     ctx.drawImage(terrC, 0, 0);
 
     drawWaterGlints(W, H);
     drawBorderStones(W, H);
+    drawGroundShadows(W, H);
     drawScene();
     drawOverlays();
 
     ctx.restore();
 
+    drawLighting(W, H);   // Tag/Nacht-Tönung über der Welt (Bildschirmraum)
+
     miniTimer -= dt;
     if (miniTimer <= 0) { miniTimer = 0.8; drawMinimap(); }
+  }
+
+  /* ==================================================== Tag/Nacht & Licht */
+
+  // sun: Lichtrichtung (dx,dy) + Länge; night: 0 (Tag) .. 1 (Nacht)
+  const daylight = { sun: { dx: 0.6, dy: 0.5, len: 1 }, night: 0, tint: null };
+  const DAY_LEN = 240;   // Sekunden je voller Zyklus
+
+  function updateDayNight() {
+    const t = (Game.st.time % DAY_LEN) / DAY_LEN;   // 0..1
+    // Sonnenstand: Winkel wandert, Schatten wird zur Dämmerung länger
+    const ang = Math.PI * (0.15 + t * 0.7);         // von Ost nach West
+    daylight.sun.dx = Math.cos(ang) * 0.9;
+    daylight.sun.dy = 0.35 + Math.sin(ang) * 0.15;
+    // Nachtanteil: Nacht um t≈0 und t≈1, Tag in der Mitte
+    const dayCurve = Math.sin(t * Math.PI);         // 0 nachts, 1 mittags
+    daylight.night = Math.max(0, 1 - dayCurve * 1.6);
+    daylight.sun.len = 1 + daylight.night * 1.4;
+  }
+
+  function drawLighting(W, H) {
+    const n = daylight.night;
+    if (n <= 0.01) {
+      // leichter Morgen-/Abendstich für Wärme
+      return;
+    }
+    // Nacht: kühle Blautönung + Vignette
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(20,28,60,${(0.5 * n).toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+    const grd = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(1, `rgba(0,0,10,${(0.45 * n).toFixed(3)})`);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  const isNight = () => daylight.night > 0.35;
+
+  /* Weiche Bodenschatten für Gebäude/Einheiten/Träger in Lichtrichtung. */
+  function drawGroundShadows(W, H) {
+    const st = Game.st;
+    const s = daylight.sun, len = s.len;
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${(0.20 + daylight.night * 0.05).toFixed(3)})`;
+    for (const b of st.buildings) {
+      if (!b.alive) continue;
+      const spr = getSprite(b.type, st.players[b.owner].tribe);
+      const cx = (b.x + 0.5) * TS, cy = (b.y + 1) * TS - 3;
+      const h = spr.h * 0.5;
+      ctx.beginPath();
+      ctx.ellipse(cx - s.dx * h * len * 0.5, cy - s.dy * 2, spr.w * 0.5, spr.w * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (const u of st.units) {
+      ctx.beginPath();
+      ctx.ellipse(u.x * TS - s.dx * 6 * len, u.y * TS + 3, 7, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (const c of st.carriers) {
+      ctx.beginPath();
+      ctx.ellipse(c.x * TS - s.dx * 5 * len, c.y * TS + 3, 5, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   function visibleTiles(W, H) {
@@ -759,22 +856,37 @@ const Render = (() => {
 
   function drawCarrier(c) {
     const px = c.x * TS, py = c.y * TS;
+    // Lauf-Wippen aus zurückgelegter Strecke
+    const phase = (c.x + c.y) * 3.2;
+    const bob = Math.abs(Math.sin(phase)) * 1.6;
+    const step = Math.sin(phase);
+    const geo = c.kind === 'geologe';
+    const body = geo ? '#c98a3a' : CFG.COLORS[c.owner];
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath(); ctx.ellipse(px, py + 3, 4, 1.8, 0, 0, Math.PI * 2); ctx.fill();
-    // kleine Figur
+    // Beine (wechselnder Schritt)
     ctx.strokeStyle = '#3a2c1c'; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(px - 1, py - 2); ctx.lineTo(px - 1.5, py + 2);
-    ctx.moveTo(px + 1, py - 2); ctx.lineTo(px + 1.5, py + 2); ctx.stroke();
-    ctx.fillStyle = CFG.COLORS[c.owner];
-    ctx.fillRect(px - 3, py - 8, 6, 6);
+    ctx.beginPath();
+    ctx.moveTo(px - 1, py - 2 - bob); ctx.lineTo(px - 1.5 - step * 1.5, py + 2);
+    ctx.moveTo(px + 1, py - 2 - bob); ctx.lineTo(px + 1.5 + step * 1.5, py + 2); ctx.stroke();
+    ctx.fillStyle = body;
+    ctx.fillRect(px - 3, py - 8 - bob, 6, 6);
     ctx.fillStyle = '#e8c39e';
-    ctx.beginPath(); ctx.arc(px, py - 10, 2.4, 0, Math.PI * 2); ctx.fill();
-    // getragene Ware / Werkzeug
-    const icon = c.res && CFG.RES_INFO[c.res] ? CFG.RES_INFO[c.res].icon : '';
-    if (icon) {
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(icon, px + 6, py - 6);
+    ctx.beginPath(); ctx.arc(px, py - 10 - bob, 2.4, 0, Math.PI * 2); ctx.fill();
+    if (geo) {
+      // Geologe: Hut + Spitzhacke
+      ctx.fillStyle = '#8a5a2a';
+      ctx.fillRect(px - 3.5, py - 12 - bob, 7, 1.6);
+      ctx.strokeStyle = '#b9b3a5'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(px + 3, py - 3 - bob); ctx.lineTo(px + 6, py - 9 - bob); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px + 6, py - 9 - bob, 2, 2.2, 4.2); ctx.stroke();
+    } else {
+      const icon = c.res && CFG.RES_INFO[c.res] ? CFG.RES_INFO[c.res].icon : '';
+      if (icon) {
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(icon, px + 6, py - 7 - bob);
+      }
     }
   }
 
@@ -800,17 +912,28 @@ const Render = (() => {
       ctx.stroke();
     } else {
       ctx.drawImage(spr.c, x, y, spr.w, spr.h);
-      // Wimpel in Spielerfarbe
+      if (isNight()) drawNightWindows(b, x, y, spr);
+      // wehende Fahne in Spielerfarbe
       const px = x + spr.w * 0.86, py = y + spr.h * 0.18;
+      const wav = Math.sin(Game.st.time * 3 + b.x) * 1.5;
       ctx.strokeStyle = '#4a3a26';
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(px, py + 12); ctx.lineTo(px, py); ctx.stroke();
       ctx.fillStyle = CFG.COLORS[b.owner];
       ctx.beginPath();
-      ctx.moveTo(px, py); ctx.lineTo(px + 8, py + 2.5); ctx.lineTo(px, py + 5);
-      ctx.closePath(); ctx.fill();
+      ctx.moveTo(px, py); ctx.quadraticCurveTo(px + 4, py + 1 + wav, px + 8, py + 2.5 + wav);
+      ctx.quadraticCurveTo(px + 4, py + 4 + wav, px, py + 5); ctx.closePath(); ctx.fill();
       buildingFX(b, x, y, spr);
     }
+  }
+
+  /* Warme Fensterlichter bei Nacht. */
+  function drawNightWindows(b, x, y, spr) {
+    const a = (0.3 + 0.25 * Math.sin(Game.st.time * 4 + b.id)) * daylight.night;
+    ctx.fillStyle = `rgba(255,210,120,${a.toFixed(3)})`;
+    const wy = y + spr.h * 0.62;
+    ctx.fillRect(x + spr.w * 0.34, wy, 3, 3);
+    ctx.fillRect(x + spr.w * 0.58, wy, 3, 3);
   }
 
   /* Arbeits-Effekte: Schornsteinrauch, Mühlenflügel, Funken, Turmschuss. */
@@ -827,7 +950,7 @@ const Render = (() => {
         ctx.lineTo(mx + Math.cos(ang) * 10, my + Math.sin(ang) * 10); ctx.stroke();
       }
     }
-    const smokes = { schmelze: 1, baeckerei: 1, werkzeugmacher: 1, schwertschmiede: 1, speermacher: 1 };
+    const smokes = { schmelze: 1, baeckerei: 1, werkzeugmacher: 1, schwertschmiede: 1, speermacher: 1, goldschmiede: 1 };
     if (b.working && smokes[b.type]) {
       const sx = x + spr.w * 0.7;
       for (let k = 0; k < 3; k++) {
@@ -837,6 +960,27 @@ const Render = (() => {
         ctx.arc(sx + Math.sin((ph + k) * 4) * 2, y + spr.h * 0.12 - ph * 16, 2 + ph * 3, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    // Schmiede-/Werkzeugfunken (pochender Hammer)
+    const forge = { schwertschmiede: 1, speermacher: 1, werkzeugmacher: 1, goldschmiede: 1, schmelze: 1 };
+    if (b.working && forge[b.type] && Math.sin(t * 7 + b.id) > 0.6) {
+      const fx = x + spr.w * 0.42, fy = y + spr.h * 0.66;
+      for (let k = 0; k < 4; k++) {
+        const a = Math.random() * Math.PI - Math.PI / 2;
+        ctx.fillStyle = b.type === 'goldschmiede' ? '#ffe08a' : '#ffb24a';
+        ctx.fillRect(fx + Math.cos(a) * 4 * Math.random(), fy - Math.sin(a) * 4 * Math.random(), 1.4, 1.4);
+      }
+    }
+    // Backofen-Glühen
+    if (b.working && b.type === 'baeckerei') {
+      const gl = 0.35 + 0.2 * Math.sin(t * 5);
+      ctx.fillStyle = `rgba(255,140,40,${gl.toFixed(2)})`;
+      ctx.fillRect(x + spr.w * 0.4, y + spr.h * 0.66, 5, 4);
+    }
+    // Goldschimmer
+    if (b.type === 'goldschmiede') {
+      ctx.fillStyle = `rgba(255,225,120,${(0.3 + 0.25 * Math.sin(t * 3 + b.id)).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(x + spr.w * 0.5, y + spr.h * 0.3, 2, 0, Math.PI * 2); ctx.fill();
     }
     // Turmschuss auf Ziel
     if (b.firing) {
@@ -850,11 +994,21 @@ const Render = (() => {
 
   function drawUnit(u) {
     const spr = getUnitSprite(u.owner, u.type);
+    const moving = !!u.path;
+    const bob = moving ? Math.abs(Math.sin((u.x + u.y) * 3.4)) * 2 : 0;
+    // kurzer Ausfall beim Zuschlagen
+    let lunge = 0;
+    if (u.shot > 0 && u.aim) lunge = (u.face === -1 ? -1 : 1) * 3 * (u.shot / 0.15);
     ctx.save();
-    ctx.translate(u.x * TS, u.y * TS - spr.h + 4);
+    ctx.translate(u.x * TS + lunge, u.y * TS - spr.h + 4 - bob);
     ctx.scale(u.face === -1 ? -1 : 1, 1);
     ctx.drawImage(spr.c, -spr.w / 2, 0, spr.w, spr.h);
     ctx.restore();
+    // Staub beim Laufen
+    if (moving && Math.sin((u.x + u.y) * 3.4) > 0.7) {
+      ctx.fillStyle = 'rgba(180,165,130,0.35)';
+      ctx.beginPath(); ctx.arc(u.x * TS - (u.face === -1 ? -4 : 4), u.y * TS + 2, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
     // Fernkampf-Pfeil (kurzer Blitz nach dem Schuss)
     if (u.type === 'bogen' && u.shot > 0 && u.aim) {
       ctx.strokeStyle = 'rgba(240,240,220,0.8)'; ctx.lineWidth = 1.2;
@@ -907,6 +1061,16 @@ const Render = (() => {
         ctx.fillRect(u.x * TS - 8, u.y * TS - 24, 16, 3);
         ctx.fillStyle = '#3dbb5a';
         ctx.fillRect(u.x * TS - 8, u.y * TS - 24, 16 * (u.hp / u.maxHp), 3);
+      }
+      // Rang-Abzeichen (goldene Winkel) für beförderte Soldaten
+      if (u.rank > 0) {
+        ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 1.4;
+        for (let r = 0; r < u.rank; r++) {
+          const yy = u.y * TS - 26 - r * 3;
+          ctx.beginPath();
+          ctx.moveTo(u.x * TS - 3, yy); ctx.lineTo(u.x * TS, yy - 2); ctx.lineTo(u.x * TS + 3, yy);
+          ctx.stroke();
+        }
       }
     }
 
@@ -977,5 +1141,6 @@ const Render = (() => {
     };
   }
 
-  return { init, startGame, draw, drawMinimap, screenToWorld, miniToWorld, cam, get canvas() { return canvas; } };
+  return { init, startGame, draw, drawMinimap, screenToWorld, miniToWorld, cam,
+           get night() { return daylight.night; }, get canvas() { return canvas; } };
 })();

@@ -7,7 +7,7 @@ const CFG = {
 
   /* Waren mit Gruppe (für HUD-Gruppierung). */
   RES: ['holz', 'bretter', 'stein', 'getreide', 'mehl', 'nahrung',
-        'erz', 'kohle', 'eisen',
+        'erz', 'kohle', 'eisen', 'golderz', 'gold',
         'axt', 'saege', 'hacke', 'sense', 'angel', 'hammer',
         'schwert', 'lanze', 'bogen', 'pferd'],
   RES_INFO: {
@@ -20,6 +20,8 @@ const CFG = {
     erz:      { name: 'Eisenerz',   icon: '🟤', grp: 'berg' },
     kohle:    { name: 'Kohle',      icon: '⚫', grp: 'berg' },
     eisen:    { name: 'Eisen',      icon: '🔩', grp: 'berg' },
+    golderz:  { name: 'Golderz',    icon: '🟡', grp: 'berg' },
+    gold:     { name: 'Gold',       icon: '🪙', grp: 'waffe' },
     axt:      { name: 'Axt',        icon: '🪓', grp: 'werkzeug' },
     saege:    { name: 'Säge',       icon: '🪚', grp: 'werkzeug' },
     hacke:    { name: 'Spitzhacke', icon: '⛏️', grp: 'werkzeug' },
@@ -43,13 +45,33 @@ const CFG = {
   /* Startvorräte inkl. Starter-Werkzeugen, damit die erste Bauwelle nicht blockiert. */
   START_RES: {
     holz: 14, bretter: 16, stein: 12, getreide: 0, mehl: 0, nahrung: 10,
-    erz: 0, kohle: 4, eisen: 2,
+    erz: 0, kohle: 4, eisen: 2, golderz: 0, gold: 0,
     axt: 2, saege: 2, hacke: 3, sense: 2, angel: 1, hammer: 3,
     schwert: 0, lanze: 2, bogen: 0, pferd: 0,
   },
   POP_BASE: 6,                  // Wohnraum durch das Hauptquartier
   CARRIERS_BASE: 6,             // Lastenträger durch das Hauptquartier
   CARRIER_MAX: 14,              // Deckel je Spieler (Performance/Balance)
+
+  /* Bergvorkommen (unter Bergkacheln versteckt, vom Geologen aufzudecken). */
+  DEP: { STEIN: 0, EISEN: 1, KOHLE: 2, GOLD: 3 },
+  DEP_INFO: {
+    0: { name: 'Steinvorkommen', icon: '🪨', res: 'stein' },
+    1: { name: 'Eisenvorkommen', icon: '🟤', res: 'erz' },
+    2: { name: 'Kohlevorkommen', icon: '⚫', res: 'kohle' },
+    3: { name: 'Goldvorkommen',  icon: '🟡', res: 'golderz' },
+  },
+  /* Geologe: entsendbare Figur, deckt Bergvorkommen im Radius auf. */
+  GEOLOGE: { cost: { nahrung: 2 }, cooldown: 20, radius: 4, speed: 2.3, maxActive: 2 },
+
+  /* Soldaten-Ränge durch Goldmünzen (Beförderung). Faktoren auf HP/Schaden. */
+  RANKS: [
+    { name: 'Rekrut',    mult: 1.0 },
+    { name: 'Veteran',   mult: 1.25 },
+    { name: 'Elite',     mult: 1.55 },
+  ],
+  PROMOTE_COST: 1,              // Gold je Rangaufstieg
+  PROMOTE_CD: 4,                // Sekunden zwischen Beförderungen je Spieler
 
   COLORS:       ['#3f8ef3', '#e04343', '#3dbb5a', '#e0b23a'],
   COLORS_DARK:  ['#2a5da0', '#8f2c2c', '#27793a', '#94762a'],
@@ -91,6 +113,7 @@ const CFG = {
     muehle: 'hammer', baeckerei: 'hammer', schmelze: 'hammer',
     werkzeugmacher: 'hammer', schwertschmiede: 'hammer',
     speermacher: 'hammer', bogenmacher: 'hammer',
+    goldmine: 'hacke', goldschmiede: 'hammer',
   },
   TOOL_KEYS: ['axt', 'saege', 'hacke', 'sense', 'angel', 'hammer'],
 
@@ -129,6 +152,10 @@ const CFG = {
     eisenmine:   { name: 'Eisenmine', icon: '⛏️', hp: 150, cost: { bretter: 3, stein: 2 }, buildTime: 12,
                    interval: 8, input: { nahrung: 1 }, output: { erz: 1 }, terrainNeed: { t: 2, r: 2 },
                    desc: 'Fördert Eisenerz am Berg. Bergleute brauchen Nahrung und eine Spitzhacke.' },
+    goldmine:    { name: 'Goldmine', icon: '🟡', hp: 150, cost: { bretter: 3, stein: 3 }, buildTime: 14,
+                   interval: 10, input: { nahrung: 1 }, output: { golderz: 1 },
+                   terrainNeed: { t: 2, r: 2 }, needDeposit: 3,
+                   desc: 'Fördert Golderz aus einem vom Geologen gefundenen Goldvorkommen. Braucht Nahrung und Spitzhacke.' },
     schmelze:    { name: 'Eisenschmelze', icon: '🔥', hp: 150, cost: { bretter: 2, stein: 3 }, buildTime: 12,
                    interval: 8, input: { erz: 1, kohle: 1 }, output: { eisen: 1 },
                    desc: 'Verhüttet Eisenerz mit Kohle zu Eisen. Braucht einen Hammer.' },
@@ -148,6 +175,9 @@ const CFG = {
     gestuet:     { name: 'Gestüt', icon: '🐎', hp: 150, cost: { bretter: 3, stein: 1 }, buildTime: 14,
                    interval: 11, input: { getreide: 2 }, output: { pferd: 1 },
                    desc: 'Züchtet Pferde für Reiter aus Getreide. Braucht eine Sense.' },
+    goldschmiede: { name: 'Goldschmiede', icon: '🪙', hp: 150, cost: { bretter: 2, stein: 3 }, buildTime: 14,
+                   interval: 10, input: { golderz: 1, kohle: 1 }, output: { gold: 1 },
+                   desc: 'Schmilzt Golderz mit Kohle zu Goldmünzen – befördert deine Soldaten. Braucht einen Hammer.' },
 
     lagerhaus:   { name: 'Lagerhaus', icon: '📦', hp: 220, cost: { bretter: 3, stein: 3 }, buildTime: 12,
                    storage: true, carriers: 4,
@@ -175,6 +205,7 @@ const CFG = {
   BUILD_ORDER: ['holzfaeller', 'saegewerk', 'steinbruch', 'fischer', 'bauernhof', 'muehle', 'baeckerei',
                 'kohlemine', 'eisenmine', 'schmelze', 'werkzeugmacher',
                 'schwertschmiede', 'speermacher', 'bogenmacher', 'gestuet',
+                'goldmine', 'goldschmiede',
                 'lagerhaus', 'wohnhaus', 'wachposten', 'wachturm', 'festung', 'kaserne'],
 
   MILITARY: ['wachposten', 'wachturm', 'festung'],

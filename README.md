@@ -66,10 +66,21 @@ Zerstöre alle gegnerischen Hauptquartiere, bevor deins fällt!
 | Nahrung | 🎣 Fischerhütte (am Wasser) · 🌾 Bauernhof → ⚙️ Mühle → 🍞 Bäckerei |
 | Bergbau | ⚫ Kohlemine · ⛏️ Eisenmine (am Berg, verbrauchen Nahrung) → 🔥 Eisenschmelze (Erz + Kohle → Eisen) |
 | Werkzeuge | 🛠️ Werkzeugmacher (Eisen + Kohle → Axt, Säge, Spitzhacke, Sense, Angel, Hammer) |
+| Gold | 🔍 Geologe findet Goldvorkommen → 🟡 Goldmine (Golderz) → 🪙 Goldschmiede (Gold) |
 | Waffen | 🗡️ Schwertschmiede (Eisen+Kohle) · 🔱 Lanzenschmiede (Eisen+Holz) · 🏹 Bogenmacher (Holz) · 🐎 Gestüt (Getreide→Pferd) |
 | Militär | 🛡️ Kaserne bildet je nach Waffe Soldaten aus · 🏠 Wohnhaus (mehr Soldatenplätze) |
 | Logistik | 📦 Lagerhaus erhöht die Zahl der Lastenträger und nimmt Waren an |
 | Gebiet | 🚩 Wachposten · 🗼 Wachturm · 🏯 Festung – erweitern das Gebiet, sobald sie besetzt sind |
+
+### Geologe & Gold
+
+Berge verbergen **Vorkommen** (Stein, Eisen, Kohle, Gold). Schick mit dem **🔍-Knopf** einen
+**Geologen** zu einem Berg – er erkundet die Umgebung und markiert Fundstellen mit Schildern.
+Eine **Goldmine** kann nur auf einem gefundenen **Goldvorkommen** gebaut werden; gefundene
+reiche Vorkommen steigern außerdem den Ertrag der normalen Minen. Die **Goldschmiede** macht aus
+Golderz und Kohle **Goldmünzen**. Gold **befördert** deine Soldaten automatisch in höhere Ränge
+(Rekrut → Veteran → Elite) – mehr Leben und Schaden, sichtbar an goldenen Rang-Abzeichen. Auch
+die Computergegner schicken Geologen aus und befördern ihre Truppen.
 
 ### Werkzeuge & Arbeiter (wie bei „Die Siedler")
 
@@ -114,18 +125,33 @@ auswählen und den eigenen Turm antippen. Über das Info-Panel kannst du Soldate
 - **Soldaten**: ⚔️-Knopf wählt alle Soldaten (oder Soldaten direkt antippen), dann Ziel antippen –
   Gegner werden angegriffen, freie Felder sind Marschbefehle, ein **eigener Turm** wird besetzt
 - **Kaserne/Werkzeugmacher**: im Info-Panel Soldatentyp bzw. Werkzeug-Priorität wählen
+- **🔍 Geologe**: Knopf antippen, dann auf ein Berggebiet tippen – deckt Vorkommen auf
 - **☰**: Pause/Menü · **▶ 1×/2×/3×**: Spielgeschwindigkeit
+
+## Grafik & Animationen
+
+Verbesserte 2.5D-Optik mit räumlicher Wirkung und viel Bewegung (weiterhin reines Canvas-2D,
+damit es flüssig und offline auf dem iPad läuft):
+
+- **Dynamische Schatten** in Lichtrichtung und plastischere Gebäude mit Seitenflächen
+- **Tag-/Nacht-Wechsel**: die Welt durchläuft Morgen → Tag → Abend → Nacht mit kühler
+  Nachttönung, Vignette und warmen Fensterlichtern (Indikator ☀️/🌆/🌙 oben)
+- **Laufende Figuren** mit Geh-Wippen und Angriffs-Ausfall, Staub unter den Füßen
+- **Arbeitende Gebäude**: Schmiedefunken, Schornsteinrauch, Backofen-Glühen, rotierende
+  Mühlenflügel, Goldschimmer; wachsende Ackerfelder
+- **Lebendige Details**: wehende Fahnen, Wasserwellen, Grenzsteine, Vorkommen-Schilder,
+  goldene Rang-Abzeichen an beförderten Soldaten
 
 ## Technik
 
-- Reines HTML/CSS/JavaScript ohne Abhängigkeiten (Canvas-2D-Rendering)
-- 2.5D-Grafik: prozedural gezeichnete Gebäude-Sprites je Volk (Dächer, Schatten,
-  Y-Sortierung), Soldatenfiguren je Typ (mit berittenem Reiter), laufende Lastenträger,
-  Ackerfelder, Schornsteinrauch, rotierende Mühlenflügel, Grenzsteine, weiche
-  Geländeübergänge, Flora und animiertes Wasser
+- Reines HTML/CSS/JavaScript ohne Abhängigkeiten (Canvas-2D-Rendering, gecachte Sprites)
+- Verbesserte 2.5D-Grafik: dynamische Schatten, Tag/Nacht-Beleuchtung, animierte Figuren
+  (Geh-Zyklus, Reiter), arbeitende Gebäude, wehende Fahnen, Vorkommen-Schilder, Rang-Abzeichen
 - Tiefe Wirtschaft: Werkzeug-Gate (Arbeiter + Werkzeug je Gebäude), Warenketten mit Kohle,
-  Werkzeugen, vier Waffen und Pferden, sichtbare Träger-Logistik mit Trägerlimit
-- Vier Soldatentypen (Nah-/Fernkampf/berittene) und drei Turmstufen mit Besatzungspflicht
+  Gold (Geologe → Goldmine → Goldschmiede), Werkzeugen, vier Waffen und Pferden, sichtbare
+  Träger-Logistik mit Trägerlimit
+- Vier Soldatentypen (Nah-/Fernkampf/berittene) mit Gold-Beförderung, drei Turmstufen mit
+  Besatzungspflicht, versteckte Bergvorkommen zum Erkunden
 - Seed-basierte Kartengenerierung (Wert-Rauschen), A*-Wegfindung, Wirtschafts-KI
 - Spielstände als JSON im localStorage (3 Slots + Autosave)
 - PWA: Manifest + Service Worker für Vollbild und Offline-Betrieb

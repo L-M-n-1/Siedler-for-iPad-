@@ -22,10 +22,11 @@ const AI = (() => {
     ['fischer', 1], ['schwertschmiede', 1], ['wohnhaus', 2], ['wachturm', 1],
     ['bogenmacher', 1], ['lagerhaus', 1], ['holzfaeller', 3], ['saegewerk', 2],
     ['eisenmine', 2], ['schmelze', 2], ['gestuet', 1], ['kaserne', 2],
+    ['goldmine', 1], ['goldschmiede', 1],
     ['wachturm', 2], ['wohnhaus', 3], ['werkzeugmacher', 2], ['schwertschmiede', 2],
     ['steinbruch', 2], ['bauernhof', 2], ['muehle', 2], ['baeckerei', 2],
     ['wohnhaus', 4], ['festung', 1], ['wachturm', 3], ['kaserne', 3],
-    ['speermacher', 2], ['wohnhaus', 5], ['wachturm', 4],
+    ['speermacher', 2], ['goldmine', 2], ['goldschmiede', 2], ['wohnhaus', 5], ['wachturm', 4],
   ];
 
   function update(p, dt) {
@@ -41,8 +42,31 @@ const AI = (() => {
     setTrainTypes(p);
     defend(p, mem);
     garrison(p, mem);
+    prospect(p);
     build(p, mem);
     attack(p, mem);
+  }
+
+  /* Geologen zu unerkundeten Bergen in/nahe eigenem Gebiet schicken. */
+  function prospect(p) {
+    if (p.geoCd > 0 || Game.geologeActive(p.id) >= CFG.GEOLOGE.maxActive) return;
+    const st = Game.st;
+    const hq = st.buildings.find(b => b.alive && b.owner === p.id && b.type === 'hq');
+    if (!hq) return;
+    // nächste noch unentdeckte Bergkachel in Reichweite des HQ suchen
+    let best = null, bestD = 1e9;
+    const R = 22;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const nx = hq.x + dx, ny = hq.y + dy;
+        if (!Game.inB(nx, ny)) continue;
+        const i = ny * st.w + nx;
+        if (st.terrain[i] !== CFG.T.MOUNTAIN || st.found[i] || st.deposit[i] < 0) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = { x: nx, y: ny }; }
+      }
+    }
+    if (best) Game.dispatchGeologe(p.id, best.x, best.y);
   }
 
   /* ------------------------------------------------ Bauen */
