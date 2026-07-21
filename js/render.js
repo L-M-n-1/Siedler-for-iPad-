@@ -108,6 +108,35 @@ const Render = (() => {
 
   function grassTone(h) { return ['#4c8a3f', '#4a873c', '#4e8c41'][h % 3]; }
 
+  /* Kleine Streudekoration auf Gras (im Cache, daher günstig). */
+  function drawFlora(g, px, py, h, x, y) {
+    const kind = h % 17;
+    const ox = px + 8 + (h % 5) * 3, oy = py + 12 + ((h >> 4) % 5) * 3;
+    if (kind === 0 || kind === 1) {          // Blumengruppe
+      const cols = ['#e6d24a', '#e07a9a', '#dfe3ec'];
+      for (let k = 0; k < 3; k++) {
+        g.fillStyle = cols[(h >> (k + 1)) % 3];
+        g.beginPath(); g.arc(ox + k * 3 - 3, oy + ((k * h) % 3), 1.4, 0, Math.PI * 2); g.fill();
+      }
+    } else if (kind === 2 || kind === 3) {   // Busch
+      g.fillStyle = '#37702e';
+      g.beginPath(); g.arc(ox, oy, 3.4, 0, Math.PI * 2); g.arc(ox + 3, oy + 1, 2.6, 0, Math.PI * 2); g.fill();
+    } else if (kind === 4) {                  // Stein
+      g.fillStyle = '#9a958a';
+      g.beginPath(); g.ellipse(ox, oy, 3, 2.2, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.2)';
+      g.beginPath(); g.ellipse(ox - 0.8, oy - 0.8, 1.2, 0.9, 0, 0, Math.PI * 2); g.fill();
+    }
+    // Schilf am Wasserrand
+    if (terrainAt(x, y + 1) === CFG.T.WATER || terrainAt(x + 1, y) === CFG.T.WATER) {
+      g.strokeStyle = '#5f7a3a'; g.lineWidth = 1;
+      for (let k = 0; k < 3; k++) {
+        const rx = px + 6 + k * 4 + (h % 3);
+        g.beginPath(); g.moveTo(rx, py + TS - 4); g.lineTo(rx - 1, py + TS - 10); g.stroke();
+      }
+    }
+  }
+
   function drawTile(i) {
     const st = Game.st;
     const x = i % st.w, y = (i / st.w) | 0;
@@ -124,6 +153,8 @@ const Render = (() => {
       g.fillRect(px + (h % 5) * 5 + 2, py + ((h >> 3) % 5) * 5 + 2, 3, 2);
       g.fillStyle = 'rgba(0,0,0,0.05)';
       g.fillRect(px + ((h >> 5) % 5) * 5 + 4, py + ((h >> 7) % 5) * 5 + 6, 3, 2);
+      // Streudekoration: Blumen, Büsche, Steine (nur wo keine Bäume stehen)
+      if (st.trees[i] === 0) drawFlora(g, px, py, h, x, y);
       // Bergschatten von Norden
       if (terrainAt(x, y - 1) === CFG.T.MOUNTAIN) {
         g.fillStyle = 'rgba(0,0,0,0.15)';
@@ -231,11 +262,16 @@ const Render = (() => {
   /* ==================================================== Gebäude-Sprites */
 
   const DIMS = {
-    hq:       { w: 1.7,  h: 2.3 },
-    wachturm: { w: 0.85, h: 2.2 },
-    kaserne:  { w: 1.25, h: 1.7 },
-    default:  { w: 1.1,  h: 1.55 },
+    hq:         { w: 1.7,  h: 2.3 },
+    festung:    { w: 1.55, h: 2.4 },
+    wachturm:   { w: 0.85, h: 2.2 },
+    wachposten: { w: 0.72, h: 1.55 },
+    kaserne:    { w: 1.25, h: 1.7 },
+    lagerhaus:  { w: 1.3,  h: 1.4 },
+    gestuet:    { w: 1.25, h: 1.45 },
+    default:    { w: 1.1,  h: 1.55 },
   };
+  const isTowerSprite = t => t === 'wachturm' || t === 'wachposten';
 
   function getSprite(type, tribeKey) {
     const key = type + '|' + tribeKey;
@@ -261,13 +297,13 @@ const Render = (() => {
     g.ellipse(W / 2 + 2 * SS, groundY, W * 0.44, 5 * SS, 0, 0, Math.PI * 2);
     g.fill();
 
-    if (type === 'wachturm') drawTower(g, W, H, groundY, style);
-    else if (type === 'hq') drawKeep(g, W, H, groundY, style);
+    if (isTowerSprite(type)) drawTower(g, W, H, groundY, style);
+    else if (type === 'hq' || type === 'festung') drawKeep(g, W, H, groundY, style);
     else drawHouse(g, W, H, groundY, style, type);
 
     // Typ-Emblem (kleines Schild an der Wand)
-    if (type !== 'hq') {
-      const ex = W / 2, ey = groundY - (type === 'wachturm' ? H * 0.42 : H * 0.20);
+    if (type !== 'hq' && type !== 'festung') {
+      const ex = W / 2, ey = groundY - (isTowerSprite(type) ? H * 0.42 : H * 0.20);
       g.fillStyle = 'rgba(245,240,225,0.92)';
       g.beginPath(); g.arc(ex, ey, 7.2 * SS, 0, Math.PI * 2); g.fill();
       g.strokeStyle = 'rgba(60,50,30,0.55)';
@@ -480,51 +516,98 @@ const Render = (() => {
 
   /* ==================================================== Soldaten-Sprites */
 
-  function getUnitSprite(owner) {
-    let s = unitSprites.get(owner);
-    if (!s) { s = makeUnitSprite(owner); unitSprites.set(owner, s); }
+  function getUnitSprite(owner, type) {
+    const key = owner + '|' + (type || 'lanze');
+    let s = unitSprites.get(key);
+    if (!s) { s = makeUnitSprite(owner, type || 'lanze'); unitSprites.set(key, s); }
     return s;
   }
 
-  function makeUnitSprite(owner) {
+  function makeUnitSprite(owner, type) {
     const col = CFG.COLORS[owner];
-    const W = 18 * SS, H = 24 * SS;
+    const mounted = type === 'reiter';
+    const W = 20 * SS, H = (mounted ? 28 : 24) * SS;
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const g = c.getContext('2d');
     const cx = W / 2;
 
     g.fillStyle = 'rgba(0,0,0,0.28)';
-    g.beginPath(); g.ellipse(cx, H - 2 * SS, 6 * SS, 2.2 * SS, 0, 0, Math.PI * 2); g.fill();
-    // Beine
-    g.strokeStyle = '#3a2c1c'; g.lineWidth = 2 * SS;
-    g.beginPath();
-    g.moveTo(cx - 2 * SS, H - 8 * SS); g.lineTo(cx - 2.5 * SS, H - 2.5 * SS);
-    g.moveTo(cx + 2 * SS, H - 8 * SS); g.lineTo(cx + 2.5 * SS, H - 2.5 * SS);
-    g.stroke();
-    // Speer
-    g.strokeStyle = '#6b4e2e'; g.lineWidth = 1.6 * SS;
-    g.beginPath(); g.moveTo(cx + 5.5 * SS, H - 3 * SS); g.lineTo(cx + 5.5 * SS, 3 * SS); g.stroke();
-    g.fillStyle = '#c8c8cc';
-    g.beginPath();
-    g.moveTo(cx + 5.5 * SS, SS); g.lineTo(cx + 7 * SS, 4.5 * SS); g.lineTo(cx + 4 * SS, 4.5 * SS);
-    g.closePath(); g.fill();
-    // Rumpf (Spielerfarbe) – ohne roundRect (ältere iPad-Safaris)
+    g.beginPath(); g.ellipse(cx, H - 2 * SS, (mounted ? 8 : 6) * SS, 2.4 * SS, 0, 0, Math.PI * 2); g.fill();
+
+    if (mounted) drawHorse(g, cx, H, col);
+
+    const bodyY = mounted ? H - 17 * SS : H - 15 * SS;   // Rumpf-Oberkante
+    const footY = mounted ? H - 12 * SS : H - 2.5 * SS;
+
+    if (!mounted) {
+      g.strokeStyle = '#3a2c1c'; g.lineWidth = 2 * SS;
+      g.beginPath();
+      g.moveTo(cx - 2 * SS, bodyY + 7 * SS); g.lineTo(cx - 2.5 * SS, footY);
+      g.moveTo(cx + 2 * SS, bodyY + 7 * SS); g.lineTo(cx + 2.5 * SS, footY);
+      g.stroke();
+    }
+
+    // Waffe je Typ
+    if (type === 'bogen') {
+      g.strokeStyle = '#7a5a30'; g.lineWidth = 1.6 * SS;
+      g.beginPath(); g.arc(cx - 5.5 * SS, bodyY + 3 * SS, 6 * SS, -1.1, 1.1); g.stroke();
+      g.strokeStyle = '#eee'; g.lineWidth = 0.8 * SS;
+      g.beginPath(); g.moveTo(cx - 5.5 * SS + 6 * SS * Math.cos(-1.1), bodyY + 3 * SS + 6 * SS * Math.sin(-1.1));
+      g.lineTo(cx - 5.5 * SS + 6 * SS * Math.cos(1.1), bodyY + 3 * SS + 6 * SS * Math.sin(1.1)); g.stroke();
+    } else if (type === 'schwert') {
+      g.strokeStyle = '#d9dde3'; g.lineWidth = 2 * SS;
+      g.beginPath(); g.moveTo(cx + 5 * SS, bodyY + 6 * SS); g.lineTo(cx + 7 * SS, bodyY - 5 * SS); g.stroke();
+      g.strokeStyle = '#7a5a30'; g.lineWidth = 2.4 * SS;
+      g.beginPath(); g.moveTo(cx + 4 * SS, bodyY + 6.5 * SS); g.lineTo(cx + 6 * SS, bodyY + 5 * SS); g.stroke();
+    } else {   // lanze / reiter: Speer
+      g.strokeStyle = '#6b4e2e'; g.lineWidth = 1.6 * SS;
+      const topY = mounted ? bodyY - 12 * SS : 3 * SS;
+      g.beginPath(); g.moveTo(cx + 6 * SS, bodyY + 6 * SS); g.lineTo(cx + 6 * SS, topY); g.stroke();
+      g.fillStyle = '#c8c8cc';
+      g.beginPath();
+      g.moveTo(cx + 6 * SS, topY - 2 * SS); g.lineTo(cx + 7.5 * SS, topY + 2 * SS); g.lineTo(cx + 4.5 * SS, topY + 2 * SS);
+      g.closePath(); g.fill();
+    }
+
+    // Rumpf (Spielerfarbe)
     g.fillStyle = col;
-    g.fillRect(cx - 4 * SS, H - 15 * SS, 8 * SS, 8 * SS);
+    g.fillRect(cx - 4 * SS, bodyY, 8 * SS, 8 * SS);
     g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = SS;
-    g.strokeRect(cx - 4 * SS, H - 15 * SS, 8 * SS, 8 * SS);
-    // Schild
-    g.fillStyle = shade(col, 0.65);
-    g.beginPath(); g.ellipse(cx - 5 * SS, H - 11 * SS, 2.6 * SS, 3.4 * SS, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.stroke();
+    g.strokeRect(cx - 4 * SS, bodyY, 8 * SS, 8 * SS);
+    // Schild (Schwert/Reiter)
+    if (type === 'schwert' || type === 'reiter') {
+      g.fillStyle = shade(col, 0.65);
+      g.beginPath(); g.ellipse(cx - 5 * SS, bodyY + 4 * SS, 2.6 * SS, 3.4 * SS, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.5)'; g.stroke();
+    }
     // Kopf + Helm
     g.fillStyle = '#e8c39e';
-    g.beginPath(); g.arc(cx, H - 18 * SS, 3.2 * SS, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#7d848c';
-    g.beginPath(); g.arc(cx, H - 18.6 * SS, 3.4 * SS, Math.PI, 0); g.fill();
-    g.fillRect(cx - 0.8 * SS, H - 18.6 * SS, 1.6 * SS, 3 * SS);
+    g.beginPath(); g.arc(cx, bodyY - 3 * SS, 3.2 * SS, 0, Math.PI * 2); g.fill();
+    if (type === 'bogen') {   // Kapuze statt Helm
+      g.fillStyle = '#5a6b3a';
+      g.beginPath(); g.arc(cx, bodyY - 3.4 * SS, 3.5 * SS, Math.PI, 0); g.fill();
+    } else {
+      g.fillStyle = '#7d848c';
+      g.beginPath(); g.arc(cx, bodyY - 3.6 * SS, 3.4 * SS, Math.PI, 0); g.fill();
+      g.fillRect(cx - 0.8 * SS, bodyY - 3.6 * SS, 1.6 * SS, 3 * SS);
+    }
     return { c, w: W / SS, h: H / SS };
+  }
+
+  function drawHorse(g, cx, H, col) {
+    g.fillStyle = '#6b4a2c';
+    g.fillRect(cx - 7 * SS, H - 13 * SS, 14 * SS, 6 * SS);      // Rumpf
+    g.strokeStyle = '#4a3420'; g.lineWidth = 2 * SS;
+    g.beginPath();
+    g.moveTo(cx - 5 * SS, H - 7 * SS); g.lineTo(cx - 5 * SS, H - 2 * SS);
+    g.moveTo(cx + 5 * SS, H - 7 * SS); g.lineTo(cx + 5 * SS, H - 2 * SS);
+    g.stroke();
+    g.fillStyle = '#6b4a2c';
+    g.fillRect(cx + 5 * SS, H - 18 * SS, 4 * SS, 8 * SS);       // Hals
+    g.beginPath(); g.arc(cx + 8 * SS, H - 18 * SS, 3 * SS, 0, Math.PI * 2); g.fill();  // Kopf
+    g.strokeStyle = '#2a1d10'; g.lineWidth = 1.4 * SS;         // Mähne
+    g.beginPath(); g.moveTo(cx + 4 * SS, H - 18 * SS); g.lineTo(cx + 2 * SS, H - 12 * SS); g.stroke();
   }
 
   /* ==================================================== Hauptzeichnung */
@@ -561,6 +644,7 @@ const Render = (() => {
     ctx.drawImage(terrC, 0, 0);
 
     drawWaterGlints(W, H);
+    drawBorderStones(W, H);
     drawScene();
     drawOverlays();
 
@@ -605,23 +689,92 @@ const Render = (() => {
     }
   }
 
-  /* Gebäude und Einheiten Y-sortiert zeichnen (Painter's Algorithm). */
+  /* Grenzsteine: kleine Pfähle mit Farbkappe entlang der Gebietskante. */
+  function drawBorderStones(W, H) {
+    if (cam.z < 0.5) return;
+    const st = Game.st;
+    const v = visibleTiles(W, H);
+    for (let y = v.y0; y <= v.y1; y++) {
+      for (let x = v.x0; x <= v.x1; x++) {
+        const o = st.owner[y * st.w + x];
+        if (o < 0) continue;
+        const h = hash(x, y);
+        if (h % 4 !== 0) continue;                 // nicht auf jedem Randfeld
+        const edge = st.owner[y * st.w + Math.max(0, x - 1)] !== o ||
+                     st.owner[y * st.w + Math.min(st.w - 1, x + 1)] !== o ||
+                     st.owner[Math.max(0, y - 1) * st.w + x] !== o ||
+                     st.owner[Math.min(st.h - 1, y + 1) * st.w + x] !== o;
+        if (!edge) continue;
+        const cx = x * TS + TS / 2, cy = y * TS + TS / 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.beginPath(); ctx.ellipse(cx, cy + 4, 3, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#b8b0a0';
+        ctx.fillRect(cx - 1.3, cy - 6, 2.6, 10);
+        ctx.fillStyle = CFG.COLORS[o];
+        ctx.beginPath(); ctx.arc(cx, cy - 7, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  /* Gebäude, Einheiten und Träger Y-sortiert zeichnen (Painter's Algorithm). */
   function drawScene() {
     const st = Game.st;
-    const items = [];
+    // Ackerfelder als Bodendekoration zuerst (unter den Gebäuden)
+    for (const b of st.buildings) {
+      if (b.alive && b.done && b.type === 'bauernhof') drawField(b);
+    }
 
+    const items = [];
     for (const b of st.buildings) {
       if (!b.alive) continue;
       items.push({ y: (b.y + 1) * TS, b });
     }
-    for (const u of st.units) {
-      items.push({ y: u.y * TS + 2, u });
-    }
+    for (const u of st.units) items.push({ y: u.y * TS + 2, u });
+    for (const c of st.carriers) items.push({ y: c.y * TS + 2, c });
     items.sort((a, bb) => a.y - bb.y);
 
     for (const it of items) {
       if (it.b) drawBuilding(it.b);
-      else drawUnit(it.u);
+      else if (it.u) drawUnit(it.u);
+      else drawCarrier(it.c);
+    }
+  }
+
+  /* Ackerfeld: gepflügte Reihen mit wachsendem Getreide rund um den Bauernhof. */
+  function drawField(b) {
+    const fx = b.x * TS - TS * 0.6, fy = b.y * TS - TS * 0.3;
+    const fw = TS * 2.2, fh = TS * 1.1;
+    ctx.fillStyle = '#7a5a33';
+    ctx.fillRect(fx, fy, fw, fh);
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
+    ctx.strokeRect(fx, fy, fw, fh);
+    const rows = 5;
+    for (let r = 0; r < rows; r++) {
+      const ry = fy + (r + 0.5) * fh / rows;
+      ctx.strokeStyle = b.working ? '#c9a94a' : '#8a6a3a';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(fx + 2, ry); ctx.lineTo(fx + fw - 2, ry); ctx.stroke();
+    }
+  }
+
+  function drawCarrier(c) {
+    const px = c.x * TS, py = c.y * TS;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(px, py + 3, 4, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+    // kleine Figur
+    ctx.strokeStyle = '#3a2c1c'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(px - 1, py - 2); ctx.lineTo(px - 1.5, py + 2);
+    ctx.moveTo(px + 1, py - 2); ctx.lineTo(px + 1.5, py + 2); ctx.stroke();
+    ctx.fillStyle = CFG.COLORS[c.owner];
+    ctx.fillRect(px - 3, py - 8, 6, 6);
+    ctx.fillStyle = '#e8c39e';
+    ctx.beginPath(); ctx.arc(px, py - 10, 2.4, 0, Math.PI * 2); ctx.fill();
+    // getragene Ware / Werkzeug
+    const icon = c.res && CFG.RES_INFO[c.res] ? CFG.RES_INFO[c.res].icon : '';
+    if (icon) {
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(icon, px + 6, py - 6);
     }
   }
 
@@ -656,12 +809,57 @@ const Render = (() => {
       ctx.beginPath();
       ctx.moveTo(px, py); ctx.lineTo(px + 8, py + 2.5); ctx.lineTo(px, py + 5);
       ctx.closePath(); ctx.fill();
+      buildingFX(b, x, y, spr);
+    }
+  }
+
+  /* Arbeits-Effekte: Schornsteinrauch, Mühlenflügel, Funken, Turmschuss. */
+  function buildingFX(b, x, y, spr) {
+    const st = Game.st, t = st.time;
+    const cx = (b.x + 0.5) * TS;
+    if (b.type === 'muehle') {
+      // rotierende Flügel
+      const mx = x + spr.w * 0.5, my = y + spr.h * 0.28, a = t * 2.2;
+      ctx.strokeStyle = '#d9d2c0'; ctx.lineWidth = 2;
+      for (let k = 0; k < 4; k++) {
+        const ang = a + k * Math.PI / 2;
+        ctx.beginPath(); ctx.moveTo(mx, my);
+        ctx.lineTo(mx + Math.cos(ang) * 10, my + Math.sin(ang) * 10); ctx.stroke();
+      }
+    }
+    const smokes = { schmelze: 1, baeckerei: 1, werkzeugmacher: 1, schwertschmiede: 1, speermacher: 1 };
+    if (b.working && smokes[b.type]) {
+      const sx = x + spr.w * 0.7;
+      for (let k = 0; k < 3; k++) {
+        const ph = (t * 0.8 + k * 0.33) % 1;
+        ctx.fillStyle = `rgba(120,120,120,${(0.25 * (1 - ph)).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(sx + Math.sin((ph + k) * 4) * 2, y + spr.h * 0.12 - ph * 16, 2 + ph * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Turmschuss auf Ziel
+    if (b.firing) {
+      const tgt = st.units.find(u => u.id === b.firing);
+      if (tgt) {
+        ctx.strokeStyle = 'rgba(255,230,150,0.7)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(cx, y + spr.h * 0.2); ctx.lineTo(tgt.x * TS, tgt.y * TS); ctx.stroke();
+      }
     }
   }
 
   function drawUnit(u) {
-    const spr = getUnitSprite(u.owner);
-    ctx.drawImage(spr.c, u.x * TS - spr.w / 2, u.y * TS - spr.h + 4, spr.w, spr.h);
+    const spr = getUnitSprite(u.owner, u.type);
+    ctx.save();
+    ctx.translate(u.x * TS, u.y * TS - spr.h + 4);
+    ctx.scale(u.face === -1 ? -1 : 1, 1);
+    ctx.drawImage(spr.c, -spr.w / 2, 0, spr.w, spr.h);
+    ctx.restore();
+    // Fernkampf-Pfeil (kurzer Blitz nach dem Schuss)
+    if (u.type === 'bogen' && u.shot > 0 && u.aim) {
+      ctx.strokeStyle = 'rgba(240,240,220,0.8)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(u.x * TS, u.y * TS - 6); ctx.lineTo(u.aim.x * TS, u.aim.y * TS); ctx.stroke();
+    }
   }
 
   /* Lebensbalken, Baufortschritt, Status, Auswahl – über allen Sprites. */
@@ -689,6 +887,16 @@ const Render = (() => {
           ctx.font = '11px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText('💤', px + TS - 5, py + 6);
+        }
+        // Besatzungsanzeige an Türmen
+        if (CFG.BUILDINGS[b.type].military) {
+          const g = b.garrison || 0, max = CFG.BUILDINGS[b.type].garrisonMax;
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = g > 0 ? 'rgba(20,26,34,0.82)' : 'rgba(120,40,40,0.82)';
+          ctx.fillRect(px + TS / 2 - 11, py - 3, 22, 12);
+          ctx.fillStyle = '#fff';
+          ctx.fillText('🛡' + g + '/' + max, px + TS / 2, py + 4);
         }
       }
     }

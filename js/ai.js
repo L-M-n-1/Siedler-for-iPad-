@@ -1,39 +1,46 @@
 'use strict';
 
-/* Computergegner: baut Wirtschaft auf, erweitert Gebiet, greift an. */
+/* Computergegner: baut Wirtschaft auf, erweitert Gebiet, besetzt Türme, greift an. */
 const AI = (() => {
 
   function newMemory() {
     return {
       think: Math.random() * 2,
       attackCd: 90 + Math.random() * 60,
-      defCd: 0,
+      defCd: 0, garrCd: 0,
       skip: {},           // vorübergehend unbaubare Vorhaben
     };
   }
 
-  /* Ausbaureihenfolge: [Gebäudetyp, gewünschte Anzahl] */
+  /* Ausbaureihenfolge: [Gebäudetyp, gewünschte Anzahl].
+     Werkzeug-/Kohlekette früh, damit das Werkzeug-Gate nicht blockiert. */
   const ORDER = [
-    ['holzfaeller', 1], ['saegewerk', 1], ['holzfaeller', 2], ['steinbruch', 1],
-    ['fischer', 1], ['bauernhof', 1], ['muehle', 1], ['baeckerei', 1],
-    ['wohnhaus', 1], ['wachturm', 1],
-    ['eisenmine', 1], ['schmelze', 1], ['schmiede', 1], ['kaserne', 1],
-    ['holzfaeller', 3], ['saegewerk', 2], ['wachturm', 2], ['wohnhaus', 2],
-    ['eisenmine', 2], ['schmelze', 2], ['schmiede', 2], ['wohnhaus', 3],
-    ['wachturm', 3], ['steinbruch', 2], ['bauernhof', 2], ['muehle', 2], ['baeckerei', 2],
-    ['kaserne', 2], ['wohnhaus', 4], ['wachturm', 4], ['schmiede', 3], ['wohnhaus', 5],
+    ['holzfaeller', 1], ['saegewerk', 1], ['steinbruch', 1], ['bauernhof', 1],
+    ['muehle', 1], ['baeckerei', 1], ['holzfaeller', 2],
+    ['kohlemine', 1], ['eisenmine', 1], ['schmelze', 1], ['werkzeugmacher', 1],
+    ['wohnhaus', 1], ['kaserne', 1], ['speermacher', 1], ['wachposten', 1],
+    ['fischer', 1], ['schwertschmiede', 1], ['wohnhaus', 2], ['wachturm', 1],
+    ['bogenmacher', 1], ['lagerhaus', 1], ['holzfaeller', 3], ['saegewerk', 2],
+    ['eisenmine', 2], ['schmelze', 2], ['gestuet', 1], ['kaserne', 2],
+    ['wachturm', 2], ['wohnhaus', 3], ['werkzeugmacher', 2], ['schwertschmiede', 2],
+    ['steinbruch', 2], ['bauernhof', 2], ['muehle', 2], ['baeckerei', 2],
+    ['wohnhaus', 4], ['festung', 1], ['wachturm', 3], ['kaserne', 3],
+    ['speermacher', 2], ['wohnhaus', 5], ['wachturm', 4],
   ];
 
   function update(p, dt) {
     const mem = p.ai;
     mem.attackCd -= dt;
     mem.defCd -= dt;
+    mem.garrCd -= dt;
     mem.think -= dt;
     if (mem.think > 0) return;
     const st = Game.st;
     mem.think = st.diff.thinkCd + Math.random();
 
+    setTrainTypes(p);
     defend(p, mem);
+    garrison(p, mem);
     build(p, mem);
     attack(p, mem);
   }
@@ -84,14 +91,13 @@ const AI = (() => {
         if (def.terrainNeed && !Game.hasTerrainNear(x, y, def.terrainNeed)) continue;
 
         let score;
-        if (type === 'wachturm') {
+        if (def.military) {
           // Am Gebietsrand, in Richtung Feind bzw. unbeanspruchtes Land
           if (!isFrontier(x, y, p.id)) continue;
           if (tooCloseToOwnTower(p, x, y)) continue;
           score = enemyHq
             ? -Math.hypot(x - enemyHq.x, y - enemyHq.y)   // auf den Feind zu
             : Math.hypot(x - hq.x, y - hq.y);             // sonst vom HQ weg
-
         } else {
           // Wirtschaftsgebäude: nah am Hauptquartier, nicht direkt daneben
           const d = Math.hypot(x - hq.x, y - hq.y);
@@ -117,7 +123,7 @@ const AI = (() => {
 
   function tooCloseToOwnTower(p, x, y) {
     return Game.st.buildings.some(b =>
-      b.alive && b.owner === p.id && CFG.BUILDINGS[b.type].claim &&
+      b.alive && b.owner === p.id && CFG.BUILDINGS[b.type].military &&
       Math.hypot(b.x - x, b.y - y) < 5);
   }
 
@@ -130,6 +136,36 @@ const AI = (() => {
       if (d < bestD) { bestD = d; best = b; }
     }
     return best;
+  }
+
+  /* ------------------------------------------------ Soldaten / Türme */
+
+  /* Kaserne(n) auf den Typ stellen, für den am meisten Waffen da sind. */
+  function setTrainTypes(p) {
+    let bestType = 'lanze', bestStock = -1;
+    for (const t of CFG.SOLDIER_KEYS) {
+      const cost = CFG.SOLDIERS[t].cost;
+      const stock = Math.min(...Object.entries(cost).map(([r, n]) => (p.res[r] || 0) / n));
+      if (stock > bestStock) { bestStock = stock; bestType = t; }
+    }
+    for (const b of Game.st.buildings) {
+      if (b.alive && b.owner === p.id && b.type === 'kaserne') b.trainType = bestType;
+    }
+  }
+
+  /* Freie Soldaten in unbesetzte eigene Türme schicken (Gebiet erst dann beansprucht). */
+  function garrison(p, mem) {
+    if (mem.garrCd > 0) return;
+    const st = Game.st;
+    const tower = st.buildings.find(b => b.alive && b.done && b.owner === p.id &&
+      CFG.BUILDINGS[b.type].military && (b.garrison || 0) < CFG.BUILDINGS[b.type].garrisonMax);
+    if (!tower) return;
+    const idle = myUnits(p).filter(u => !u.tb && !u.tu && !u.tgGar);
+    if (!idle.length) return;
+    // nächsten freien Soldaten schicken
+    idle.sort((a, b) => Math.hypot(a.x - tower.x, a.y - tower.y) - Math.hypot(b.x - tower.x, b.y - tower.y));
+    Game.commandUnits([idle[0]], tower.x + 0.5, tower.y + 0.5);
+    mem.garrCd = 4;
   }
 
   /* ------------------------------------------------ Kämpfen */
@@ -146,7 +182,7 @@ const AI = (() => {
       Game.inB(Math.floor(u.x), Math.floor(u.y)) &&
       st.owner[Math.floor(u.y) * st.w + Math.floor(u.x)] === p.id);
     if (!intruder) return;
-    const troops = myUnits(p).filter(u => !u.tb && !u.tu);
+    const troops = myUnits(p).filter(u => !u.tb && !u.tu && !u.tgGar);
     if (!troops.length) return;
     Game.commandUnits(troops, intruder.x, intruder.y);
     mem.defCd = 8;
@@ -155,14 +191,19 @@ const AI = (() => {
   function attack(p, mem) {
     if (mem.attackCd > 0) return;
     const st = Game.st;
-    const troops = myUnits(p);
+    const troops = myUnits(p).filter(u => !u.tgGar);
     if (troops.length < st.diff.attackN) return;
 
     const hq = st.buildings.find(b => b.alive && b.owner === p.id && b.type === 'hq');
     if (!hq) return;
-    // Bevorzugt Grenzposten (Türme), sonst das nächste feindliche Gebäude
-    const target = nearestEnemyBuilding(p, hq.x, hq.y, 'wachturm')
-                || nearestEnemyBuilding(p, hq.x, hq.y, null);
+    // Bevorzugt Grenztürme, sonst das nächste feindliche Gebäude
+    let target = null, bestD = 1e9;
+    for (const b of st.buildings) {
+      if (!b.alive || b.owner === p.id || !Game.isEnemy(p.id, b.owner)) continue;
+      const mil = CFG.BUILDINGS[b.type].military ? 0.6 : 1;   // Türme leicht bevorzugen
+      const d = Math.hypot(b.x - hq.x, b.y - hq.y) * mil;
+      if (d < bestD) { bestD = d; target = b; }
+    }
     if (!target) return;
     Game.commandUnits(troops, target.x + 0.5, target.y + 0.5);
     mem.attackCd = st.diff.attackCd * (0.8 + Math.random() * 0.4);

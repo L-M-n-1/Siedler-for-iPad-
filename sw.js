@@ -1,7 +1,7 @@
 'use strict';
 
 /* Service Worker: Spiel offline verfügbar machen (Cache-first). */
-const CACHE = 'neue-siedler-v2';
+const CACHE = 'neue-siedler-v3';
 const FILES = [
   '.', 'index.html', 'manifest.webmanifest', 'icon.png',
   'css/style.css',

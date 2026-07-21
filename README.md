@@ -64,9 +64,47 @@ Zerstöre alle gegnerischen Hauptquartiere, bevor deins fällt!
 | Bauholz | 🪓 Holzfäller → 🪚 Sägewerk (Bretter) |
 | Stein | 🪨 Steinbruch (braucht Berge in der Nähe) |
 | Nahrung | 🎣 Fischerhütte (am Wasser) · 🌾 Bauernhof → ⚙️ Mühle → 🍞 Bäckerei |
-| Waffen | ⛏️ Eisenmine (am Berg, verbraucht Nahrung) → 🔥 Eisenschmelze → 🔨 Waffenschmiede |
-| Militär | 🛡️ Kaserne (Waffe + Nahrung → Soldat) · 🏠 Wohnhaus (mehr Soldatenplätze) |
-| Gebiet | 🗼 Wachturm erweitert das eigene Territorium – gebaut wird nur auf eigenem Land |
+| Bergbau | ⚫ Kohlemine · ⛏️ Eisenmine (am Berg, verbrauchen Nahrung) → 🔥 Eisenschmelze (Erz + Kohle → Eisen) |
+| Werkzeuge | 🛠️ Werkzeugmacher (Eisen + Kohle → Axt, Säge, Spitzhacke, Sense, Angel, Hammer) |
+| Waffen | 🗡️ Schwertschmiede (Eisen+Kohle) · 🔱 Lanzenschmiede (Eisen+Holz) · 🏹 Bogenmacher (Holz) · 🐎 Gestüt (Getreide→Pferd) |
+| Militär | 🛡️ Kaserne bildet je nach Waffe Soldaten aus · 🏠 Wohnhaus (mehr Soldatenplätze) |
+| Logistik | 📦 Lagerhaus erhöht die Zahl der Lastenträger und nimmt Waren an |
+| Gebiet | 🚩 Wachposten · 🗼 Wachturm · 🏯 Festung – erweitern das Gebiet, sobald sie besetzt sind |
+
+### Werkzeuge & Arbeiter (wie bei „Die Siedler")
+
+Jedes Produktionsgebäude braucht einen Arbeiter mit dem **passenden Werkzeug** (Holzfäller → Axt,
+Bauernhof → Sense, Minen → Spitzhacke, Verarbeitung → Hammer usw.). Beim Fertigstellen holt sich
+ein Siedler das Werkzeug aus dem Lager und besetzt das Gebäude dauerhaft. Fehlt das Werkzeug,
+steht das Gebäude still, bis der **Werkzeugmacher** Nachschub liefert. Zu Beginn hast du ein
+kleines Werkzeug-Startset – plane den Werkzeugmacher früh ein!
+
+### Lastenträger
+
+Produzierte Waren werden von **Lastenträgern** sichtbar vom Gebäude zum Hauptquartier (oder
+Lagerhaus) getragen; erst dort landen sie im Vorrat. Die Zahl der Träger ist begrenzt
+(Hauptquartier + Lagerhäuser). Sind alle unterwegs, stapeln sich fertige Waren am Gebäude
+(„Wartet auf Träger") – wer sein Reich überdehnt, bremst so seine Wirtschaft. Die Anzeige
+🧺 oben zeigt beschäftigte / verfügbare Träger.
+
+### Soldatentypen
+
+| Typ | Waffe | Eigenschaften |
+|---|---|---|
+| 🔱 Lanzenträger | Lanze | günstig, schnell ausgebildet, solide Basis |
+| 🗡️ Schwertkämpfer | Schwert | viel Leben, starker Nahkampf |
+| 🏹 Bogenschütze | Bogen | greift aus Distanz an, wenig Panzerung |
+| 🐎 Reiter | Schwert + Pferd | schnell und schlagkräftig, teuer |
+
+Den Ausbildungstyp stellst du im Info-Panel der **Kaserne** ein. Die Kaserne verbraucht die
+passende Waffe (Reiter zusätzlich ein Pferd) plus Nahrung und braucht freien Wohnraum.
+
+### Türme & Gebiet (Besatzung nötig)
+
+Es gibt drei Militärgebäude mit wachsendem Gebietsradius: **Wachposten**, **Wachturm** und
+**Festung**. Ein Turm beansprucht erst dann Land, wenn ihn ein **Soldat besetzt**: Soldaten
+auswählen und den eigenen Turm antippen. Über das Info-Panel kannst du Soldaten wieder
+**ausrücken** lassen. Grenzsteine markieren dein Territorium.
 
 ### Steuerung (Touch)
 
@@ -74,15 +112,21 @@ Zerstöre alle gegnerischen Hauptquartiere, bevor deins fällt!
 - **Gebäude bauen**: Unten ein Gebäude antippen, dann auf ein freies Feld im eigenen Gebiet tippen
 - **Gebäude-Info**: Gebäude antippen (dort auch Abreißen)
 - **Soldaten**: ⚔️-Knopf wählt alle Soldaten (oder Soldaten direkt antippen), dann Ziel antippen –
-  Gegner werden angegriffen, freie Felder sind Marschbefehle
+  Gegner werden angegriffen, freie Felder sind Marschbefehle, ein **eigener Turm** wird besetzt
+- **Kaserne/Werkzeugmacher**: im Info-Panel Soldatentyp bzw. Werkzeug-Priorität wählen
 - **☰**: Pause/Menü · **▶ 1×/2×/3×**: Spielgeschwindigkeit
 
 ## Technik
 
 - Reines HTML/CSS/JavaScript ohne Abhängigkeiten (Canvas-2D-Rendering)
 - 2.5D-Grafik: prozedural gezeichnete Gebäude-Sprites je Volk (Dächer, Schatten,
-  Y-Sortierung), weiche Geländeübergänge, animiertes Wasser, Soldatenfiguren
-- Seed-basierte Kartengenerierung (Wert-Rauschen), A*-Wegfindung, einfache Wirtschafts-KI
+  Y-Sortierung), Soldatenfiguren je Typ (mit berittenem Reiter), laufende Lastenträger,
+  Ackerfelder, Schornsteinrauch, rotierende Mühlenflügel, Grenzsteine, weiche
+  Geländeübergänge, Flora und animiertes Wasser
+- Tiefe Wirtschaft: Werkzeug-Gate (Arbeiter + Werkzeug je Gebäude), Warenketten mit Kohle,
+  Werkzeugen, vier Waffen und Pferden, sichtbare Träger-Logistik mit Trägerlimit
+- Vier Soldatentypen (Nah-/Fernkampf/berittene) und drei Turmstufen mit Besatzungspflicht
+- Seed-basierte Kartengenerierung (Wert-Rauschen), A*-Wegfindung, Wirtschafts-KI
 - Spielstände als JSON im localStorage (3 Slots + Autosave)
 - PWA: Manifest + Service Worker für Vollbild und Offline-Betrieb
 

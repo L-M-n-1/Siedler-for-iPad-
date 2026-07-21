@@ -156,6 +156,10 @@ const UI = (() => {
   function loadGame(slot) {
     const data = SaveGame.load(slot);
     if (!data) { renderSaveList(); return; }
+    if (data.incompatible || !data.state) {
+      toast('Spielstand stammt aus einer älteren Version und ist nicht mehr kompatibel');
+      return;
+    }
     Game.restore(data.state);
     enterGame();
     toast('💾 Spielstand geladen');
@@ -213,10 +217,12 @@ const UI = (() => {
       any = true;
       const row = document.createElement('div');
       row.className = 'save-slot';
-      row.innerHTML = `<div class="save-info"><b>${slotLabel(slot)}</b><br>${slotMetaText(m)}</div>`;
+      const warn = m.incompatible ? '<br><small class="warn">⚠️ ältere Version – nicht ladbar</small>' : '';
+      row.innerHTML = `<div class="save-info"><b>${slotLabel(slot)}</b><br>${slotMetaText(m)}${warn}</div>`;
       const load = document.createElement('button');
       load.className = 'btn small';
       load.textContent = '▶ Laden';
+      load.disabled = !!m.incompatible;
       load.onclick = () => loadGame(slot);
       const del = document.createElement('button');
       del.className = 'btn small danger';
@@ -262,13 +268,21 @@ const UI = (() => {
   function buildResBar() {
     const bar = $('resbar');
     bar.innerHTML = '';
-    for (const r of CFG.RES) {
-      const el = document.createElement('span');
-      el.className = 'res-item';
-      el.id = 'res-' + r;
-      el.title = CFG.RES_INFO[r].name;
-      bar.appendChild(el);
-    }
+    CFG.RES_GROUPS.forEach((grp, gi) => {
+      if (gi > 0) {
+        const div = document.createElement('span');
+        div.className = 'res-div';
+        bar.appendChild(div);
+      }
+      for (const r of CFG.RES) {
+        if (CFG.RES_INFO[r].grp !== grp.id) continue;
+        const el = document.createElement('span');
+        el.className = 'res-item';
+        el.id = 'res-' + r;
+        el.title = CFG.RES_INFO[r].name + ' (' + grp.name + ')';
+        bar.appendChild(el);
+      }
+    });
   }
 
   function buildBuildBar() {
@@ -339,11 +353,16 @@ const UI = (() => {
 
     const p = st.players[0];
     for (const r of CFG.RES) {
-      $('res-' + r).innerHTML = `${CFG.RES_INFO[r].icon}<b>${p.res[r]}</b>`;
+      const el = $('res-' + r);
+      const v = p.res[r] || 0;
+      el.innerHTML = `${CFG.RES_INFO[r].icon}<b>${v}</b>`;
+      el.classList.toggle('zero', v === 0);
     }
     $('pop-now').textContent = Game.countPop(0);
     $('pop-max').textContent = Game.maxPop(0);
     $('army-count').textContent = st.units.filter(u => u.owner === 0).length;
+    const cb = $('carrierbar');
+    if (cb) cb.innerHTML = `🧺 ${Game.carriersBusy(0)}/${Game.carrierCap(0)}`;
 
     // Baubare Gebäude hervorheben
     for (const type of CFG.BUILD_ORDER) {
@@ -376,8 +395,11 @@ const UI = (() => {
 
   /* ------------------------------------------------ Gebäude-Info */
 
+  let lastInfoId = null;
+
   function showInfo(b) {
     infoBuilding = b;
+    lastInfoId = null;              // erzwingt vollen Neuaufbau
     refreshInfo();
     $('btn-demolish').style.display = (b.owner === 0 && b.type !== 'hq') ? '' : 'none';
     $('infopanel').classList.remove('hidden');
@@ -386,23 +408,96 @@ const UI = (() => {
   function refreshInfo() {
     const b = infoBuilding;
     if (!b || !b.alive) { hideInfo(); return; }
+    if (b.id !== lastInfoId) { buildInfoBody(b); lastInfoId = b.id; }
+    updateInfoDyn(b);
+  }
+
+  /* Statischer Teil des Info-Panels inkl. interaktiver Bedienelemente. */
+  function buildInfoBody(b) {
     const def = CFG.BUILDINGS[b.type];
     const p = Game.st.players[b.owner];
     const tribe = CFG.TRIBES[p.tribe];
     $('info-title').textContent = `${def.icon} ${def.name} (${p.name}${tribe ? ' – ' + tribe.name : ''})`;
-    let body = def.desc + '<br><br>';
-    if (!b.done) {
-      body += `🏗️ Im Bau – ${Math.round(b.progress * 100)} %`;
-    } else {
-      body += `❤️ ${Math.ceil(b.hp)}/${b.maxHp}`;
-      if (b.status) body += `<br>💤 ${b.status}`;
-      else if (def.interval) body += '<br>✅ Arbeitet';
+    const body = $('info-body');
+    body.innerHTML = `<div class="info-desc">${def.desc}</div><div id="info-dyn"></div>`;
+
+    if (b.owner !== 0 || !b.done) return;   // nur eigene, fertige Gebäude steuerbar
+
+    // Werkzeugmacher: Werkzeugtyp wählen (Auto oder fest)
+    if (def.makesTool) {
+      body.appendChild(makeChooser('Werkzeug',
+        [{ k: null, icon: '🎲', name: 'Auto' }].concat(CFG.TOOL_KEYS.map(t => ({ k: t, icon: CFG.RES_INFO[t].icon, name: CFG.RES_INFO[t].name }))),
+        () => b.toolType, v => { b.toolType = v; }));
     }
-    $('info-body').innerHTML = body;
+    // Kaserne: Soldatentyp wählen
+    if (def.trains) {
+      body.appendChild(makeChooser('Ausbildung',
+        CFG.SOLDIER_KEYS.map(t => ({ k: t, icon: CFG.SOLDIERS[t].icon, name: CFG.SOLDIERS[t].short })),
+        () => b.trainType || 'lanze', v => { b.trainType = v; }));
+    }
+    // Turm: Besatzung ausrücken lassen
+    if (def.military) {
+      const btn = document.createElement('button');
+      btn.className = 'btn small';
+      btn.id = 'info-sally';
+      btn.textContent = '⚔️ Soldat ausrücken';
+      btn.onclick = () => { if (Game.sallyGarrison(b)) updateInfoDyn(b); };
+      body.appendChild(btn);
+    }
+  }
+
+  /* Kleiner Icon-Umschalter. get() liefert aktuellen Wert, set(v) übernimmt. */
+  function makeChooser(label, opts, get, set) {
+    const wrap = document.createElement('div');
+    wrap.className = 'info-choose';
+    wrap.innerHTML = `<span class="info-lbl">${label}:</span>`;
+    const seg = document.createElement('span');
+    seg.className = 'chooser';
+    for (const o of opts) {
+      const btn = document.createElement('button');
+      btn.innerHTML = o.icon;
+      btn.title = o.name;
+      if (get() === o.k) btn.classList.add('on');
+      btn.onclick = () => {
+        set(o.k);
+        seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === btn));
+      };
+      seg.appendChild(btn);
+    }
+    wrap.appendChild(seg);
+    return wrap;
+  }
+
+  /* Dynamischer Teil: HP, Status, Besatzung, Ausgangslager. */
+  function updateInfoDyn(b) {
+    const el = $('info-dyn');
+    if (!el) return;
+    const def = CFG.BUILDINGS[b.type];
+    let s = '';
+    if (!b.done) {
+      s = `🏗️ Im Bau – ${Math.round(b.progress * 100)} %`;
+    } else {
+      s = `❤️ ${Math.ceil(b.hp)}/${b.maxHp}`;
+      if (def.military) {
+        s += `<br>🛡️ Besatzung ${b.garrison || 0}/${def.garrisonMax}`;
+        if ((b.garrison || 0) === 0) s += ' – <b>unbesetzt</b> (kein Gebiet)';
+      }
+      if (b.status) s += `<br>💤 ${b.status}`;
+      else if (def.interval || def.trains) s += '<br>✅ Arbeitet';
+      const out = b.out && Object.entries(b.out).filter(([, n]) => n > 0);
+      if (out && out.length) {
+        s += '<br>📦 ' + out.map(([r, n]) => `${n}${CFG.RES_INFO[r].icon}`).join(' ') +
+             (b.hasCarrier ? ' 🧺' : '');
+      }
+    }
+    el.innerHTML = s;
+    const sally = $('info-sally');
+    if (sally) sally.style.display = (b.garrison || 0) > 0 ? '' : 'none';
   }
 
   function hideInfo() {
     infoBuilding = null;
+    lastInfoId = null;
     $('infopanel').classList.add('hidden');
   }
 
@@ -526,7 +621,8 @@ const UI = (() => {
     }
 
     if (selected.length) {
-      Game.commandUnits(selected, w.x / CFG.TS, w.y / CFG.TS);
+      const res = Game.commandUnits(selected, w.x / CFG.TS, w.y / CFG.TS);
+      if (res && res.garrisoned) toast('🛡️ Soldaten besetzen den Turm');
       cancelModes();
       return;
     }

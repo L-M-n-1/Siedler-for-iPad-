@@ -16,13 +16,13 @@ const Game = (() => {
       w: map.w, h: map.h,
       terrain: map.terrain, trees: map.trees,
       owner: new Int8Array(map.w * map.h).fill(-1),
-      buildings: [], units: [],
+      buildings: [], units: [], carriers: [],
       players: [],
       time: 0, speed: 1, over: null,
       nextId: 1,
       dirty: new Set(),          // Kacheln, die neu gezeichnet werden müssen
       territoryDirty: true,
-      regrowTimer: 0,
+      regrowTimer: 0, towerTimer: 0,
       toast: null,
     };
 
@@ -55,13 +55,15 @@ const Game = (() => {
       terrain: Uint8Array.from(s.terrain),
       trees: Uint8Array.from(s.trees),
       owner: new Int8Array(s.w * s.h).fill(-1),
-      buildings: s.buildings, units: s.units,
+      buildings: s.buildings, units: s.units, carriers: [],
       players: s.players.map(p => ({ ...p, ai: p.human ? null : (p.ai || AI.newMemory()) })),
       time: s.time, speed: 1, over: s.over || null,
       nextId: s.nextId,
       dirty: new Set(), territoryDirty: true,
-      regrowTimer: 0, toast: null,
+      regrowTimer: 0, towerTimer: 0, toast: null,
     };
+    // In-Flight-Lieferungen wurden beim Speichern dem Pool gutgeschrieben → Träger neu starten
+    for (const b of st.buildings) { b.hasCarrier = false; }
     recomputeTerritory();
     return st;
   }
@@ -86,6 +88,16 @@ const Game = (() => {
     if (!def.claim) return 0;
     return def.claim + (tribeOf(b.owner).bonus.claim?.[b.type] || 0);
   }
+
+  /* Beansprucht dieses Gebäude gerade Land? Militär nur mit Besatzung. */
+  function claimsLand(b) {
+    const def = CFG.BUILDINGS[b.type];
+    if (!b.alive || !b.done || !def.claim) return false;
+    if (def.military) return (b.garrison || 0) > 0;
+    return true;
+  }
+
+  const needsTool = type => !!CFG.TOOL_OF[type];
 
   /* ------------------------------------------------ Hilfen */
 
@@ -147,6 +159,10 @@ const Game = (() => {
       hp, maxHp: hp,
       done: !!instant, progress: instant ? 1 : 0,
       timer: def.interval || 0, working: false, alive: true,
+      staffed: !needsTool(type),     // Werkzeug-Gebäude erst nach Besetzung tätig
+      out: {}, hasCarrier: false,     // Ausgangslager + laufende Lieferung
+      garrison: 0, gtypes: [],        // Turm-Besatzung (Anzahl + Typen)
+      toolType: null, trainType: 'lanze',
     };
     st.buildings.push(b);
     st.dirty.add(idx(x, y));
@@ -183,6 +199,7 @@ const Game = (() => {
     p.defeated = true;
     for (const b of st.buildings) if (b.owner === p.id) { b.alive = false; st.dirty.add(idx(b.x, b.y)); }
     st.units = st.units.filter(u => u.owner !== p.id);
+    st.carriers = st.carriers.filter(c => c.owner !== p.id);
     recomputeTerritory();
     st.territoryDirty = true;   // Anzeige neu zeichnen
     st.toast = { text: `${p.name} wurde${p.human ? 'st' : ''} besiegt!`, t: 5 };
@@ -208,8 +225,7 @@ const Game = (() => {
     owner.fill(-1);
     const best = new Float32Array(w * h).fill(1e9);
     for (const b of st.buildings) {
-      const def = CFG.BUILDINGS[b.type];
-      if (!b.alive || !b.done || !def.claim) continue;
+      if (!claimsLand(b)) continue;
       const r = claimOf(b), r2 = r * r;
       for (let y = Math.max(0, b.y - r); y <= Math.min(h - 1, b.y + r); y++) {
         for (let x = Math.max(0, b.x - r); x <= Math.min(w - 1, b.x + r); x++) {
@@ -319,17 +335,19 @@ const Game = (() => {
     return n;
   }
 
-  function spawnSoldier(pid, x, y) {
+  function spawnSoldier(pid, x, y, type) {
+    const S = CFG.SOLDIERS[type] || CFG.SOLDIERS.lanze;
     const spot = nearestWalkable(x, y + 1, 3) || { x, y };
     const mult = tribeOf(pid).bonus.soldier || 1;
-    const hp = Math.round(CFG.SOLDIER.hp * mult);
+    const hp = Math.round(S.hp * mult);
     st.units.push({
-      id: st.nextId++, owner: pid,
+      id: st.nextId++, owner: pid, type: type || 'lanze',
       x: spot.x + 0.5, y: spot.y + 0.5,
       hp, maxHp: hp,
-      dmgU: CFG.SOLDIER.dmgUnit * mult,
-      dmgB: CFG.SOLDIER.dmgBuilding * mult,
-      path: null, pi: 0, tb: null, tu: null,
+      dmgU: S.dmgUnit * mult,
+      dmgB: S.dmgBuilding * mult,
+      range: S.range, speed: S.speed, cool: S.cooldown, aggro: S.aggro,
+      path: null, pi: 0, tb: null, tu: null, tgGar: null,
       cd: 0, scan: Math.random() * 0.5,
     });
   }
@@ -346,7 +364,7 @@ const Game = (() => {
     return st.units.find(u => u.id === id && u.hp > 0) || null;
   }
 
-  /* Befehl: Einheiten zu Punkt schicken bzw. Ziel angreifen. */
+  /* Befehl: Einheiten zu Punkt schicken, Ziel angreifen oder eigenen Turm besetzen. */
   function commandUnits(units, tx, ty) {
     const tb = buildingAt(Math.floor(tx), Math.floor(ty));
     let tu = null;
@@ -355,18 +373,25 @@ const Game = (() => {
       const d = Math.hypot(u.x - tx, u.y - ty);
       if (d < bestD) { bestD = d; tu = u; }
     }
-    let attacked = false;
+    // Eigener Turm mit freiem Platz? → Besatzung schicken statt anzugreifen
+    const ownTower = tb && !isEnemy(0, tb.owner) && CFG.BUILDINGS[tb.type].military ? tb : null;
+    let attacked = false, garrisoned = false;
     units.forEach((u, k) => {
-      u.tb = null; u.tu = null;
-      if (tu && tu.owner !== u.owner && isEnemy(u.owner, tu.owner)) { u.tu = tu.id; attacked = true; }
-      else if (tb && tb.owner !== u.owner && isEnemy(u.owner, tb.owner)) { u.tb = tb.id; attacked = true; }
+      u.tb = null; u.tu = null; u.tgGar = null;
+      if (ownTower && u.owner === tb.owner) {
+        u.tgGar = tb.id; garrisoned = true;
+      } else if (tu && tu.owner !== u.owner && isEnemy(u.owner, tu.owner)) {
+        u.tu = tu.id; attacked = true;
+      } else if (tb && tb.owner !== u.owner && isEnemy(u.owner, tb.owner)) {
+        u.tb = tb.id; attacked = true;
+      }
       const off = spreadOffset(k);
       const gx = Math.max(0, Math.min(st.w - 1, Math.floor(tx + off.x)));
       const gy = Math.max(0, Math.min(st.h - 1, Math.floor(ty + off.y)));
       u.path = astar(Math.floor(u.x), Math.floor(u.y), gx, gy);
       u.pi = 0;
     });
-    return attacked;
+    return { attacked, garrisoned };
   }
 
   function spreadOffset(k) {
@@ -388,13 +413,119 @@ const Game = (() => {
     for (const b of st.buildings) if (b.alive) updateBuilding(b, dt);
     st.buildings = st.buildings.filter(b => b.alive);
 
+    updateCarriers(dt);
     updateUnits(dt);
+    towerDefense(dt);
 
     regrow(dt);
 
     for (const p of st.players) {
       if (!p.defeated && !p.human) AI.update(p, dt);
     }
+  }
+
+  /* ------------------------------------------------ Lastenträger / Logistik */
+
+  function carrierCap(pid) {
+    let n = CFG.CARRIERS_BASE;
+    for (const b of st.buildings) {
+      if (b.alive && b.done && b.owner === pid && CFG.BUILDINGS[b.type].carriers) n += CFG.BUILDINGS[b.type].carriers;
+    }
+    return Math.min(CFG.CARRIER_MAX, n);
+  }
+
+  function carriersBusy(pid) {
+    let n = 0;
+    for (const c of st.carriers) if (c.owner === pid && c.kind === 'goods') n++;
+    return n;
+  }
+
+  /* Nächstes Lager (HQ oder Lagerhaus) des Spielers. */
+  function nearestStore(pid, x, y) {
+    let best = null, bestD = 1e9;
+    for (const b of st.buildings) {
+      if (!b.alive || !b.done || b.owner !== pid) continue;
+      if (b.type !== 'hq' && !CFG.BUILDINGS[b.type].storage) continue;
+      const d = (b.x - x) ** 2 + (b.y - y) ** 2;
+      if (d < bestD) { bestD = d; best = b; }
+    }
+    return best;
+  }
+
+  /* Produzierte Waren aus dem Ausgangslager eines Gebäudes per Träger ausliefern. */
+  function dispatchGoods(b) {
+    const p = st.players[b.owner];
+    if (b.hasCarrier || !Object.keys(b.out).length) return;
+    if (carriersBusy(b.owner) >= carrierCap(b.owner)) return;
+    const store = nearestStore(b.owner, b.x, b.y);
+    if (!store) { creditPool(p, b.out); b.out = {}; return; }   // Notfall
+    const path = astar(b.x, b.y, store.x, store.y);
+    const payload = b.out; b.out = {}; b.hasCarrier = true;
+    if (!path) { creditPool(p, payload); b.hasCarrier = false; return; }
+    st.carriers.push({
+      id: st.nextId++, owner: b.owner, kind: 'goods',
+      from: b.id, payload, res: firstKey(payload),
+      x: b.x + 0.5, y: b.y + 0.5, path, pi: 0, speed: 2.2,
+    });
+  }
+
+  /* Siedler bringt ein Werkzeug vom Lager zum neu besetzten Gebäude (nur Optik). */
+  function dispatchStaff(b, tool) {
+    const store = nearestStore(b.owner, b.x, b.y);
+    if (!store) return;
+    const path = astar(store.x, store.y, b.x, b.y);
+    if (!path) return;
+    st.carriers.push({
+      id: st.nextId++, owner: b.owner, kind: 'staff',
+      res: tool, x: store.x + 0.5, y: store.y + 0.5, path, pi: 0, speed: 2.4,
+    });
+  }
+
+  function updateCarriers(dt) {
+    for (const c of st.carriers) {
+      const wp = c.path[c.pi];
+      if (!wp) { c.done = true; continue; }
+      const d = Math.hypot(wp.x - c.x, wp.y - c.y);
+      const step = c.speed * dt;
+      if (d <= step) { c.x = wp.x; c.y = wp.y; c.pi++; if (c.pi >= c.path.length) c.done = true; }
+      else { c.x += (wp.x - c.x) / d * step; c.y += (wp.y - c.y) / d * step; }
+      if (c.done && c.kind === 'goods') {
+        creditPool(st.players[c.owner], c.payload);
+        const src = st.buildings.find(b => b.id === c.from);
+        if (src) src.hasCarrier = false;
+      }
+    }
+    st.carriers = st.carriers.filter(c => !c.done);
+  }
+
+  function creditPool(p, bundle) {
+    for (const [r, n] of Object.entries(bundle)) p.res[r] = (p.res[r] || 0) + n;
+  }
+
+  const firstKey = o => Object.keys(o)[0];
+
+  const OUTBUF_CAP = 8;
+  const bufTotal = b => Object.values(b.out).reduce((a, n) => a + n, 0);
+
+  /* ------------------------------------------------ Turmverteidigung */
+
+  function towerDefense(dt) {
+    st.towerTimer -= dt;
+    if (st.towerTimer > 0) return;
+    st.towerTimer = 0.6;
+    for (const b of st.buildings) {
+      if (!b.alive || !b.done || !CFG.BUILDINGS[b.type].military || (b.garrison || 0) <= 0) continue;
+      const range = 3.5 + b.garrison * 0.6;
+      let tgt = null, bestD = range;
+      for (const e of st.units) {
+        if (e.owner === b.owner || !isEnemy(b.owner, e.owner)) continue;
+        const d = Math.hypot(e.x - (b.x + 0.5), e.y - (b.y + 0.5));
+        if (d < bestD) { bestD = d; tgt = e; }
+      }
+      if (tgt) { tgt.hp -= 3 * b.garrison; b.firing = tgt.id; }
+      else b.firing = null;
+    }
+    st.units = st.units.filter(u => u.hp > 0);
   }
 
   function updateBuilding(b, dt) {
@@ -410,14 +541,27 @@ const Game = (() => {
       }
       return;
     }
-    if (!def.interval) return;
+
+    // Fertige Waren zum Lager schaffen (auch für nicht-produzierende Zustände)
+    dispatchGoods(b);
+
+    if (def.trains) { trainAtBarracks(b, dt, def, p); return; }
+    if (!def.interval) return;   // Lager, Wohnhaus, Militär: keine Produktion
 
     b.timer -= dt * p.prodMult;
     if (b.timer > 0) return;
-
     b.working = false;
     b.status = null;
 
+    // Werkzeug-Gate: ohne Werkzeug kein Arbeiter → Gebäude steht still
+    if (needsTool(b.type) && !b.staffed) {
+      const tool = CFG.TOOL_OF[b.type];
+      if ((p.res[tool] || 0) < 1) { b.status = 'Werkzeug fehlt (' + CFG.RES_INFO[tool].name + ')'; b.timer = 1.5; return; }
+      p.res[tool]--; b.staffed = true;
+      dispatchStaff(b, tool);   // Siedler bringt das Werkzeug (Optik)
+    }
+
+    if (bufTotal(b) >= OUTBUF_CAP) { b.status = 'Lager voll – wartet auf Träger'; b.timer = 1.0; return; }
     if (def.terrainNeed && !def.terrainNeed.trees && !hasTerrainNear(b.x, b.y, def.terrainNeed)) {
       b.status = 'Gelände fehlt'; b.timer = 1.5; return;
     }
@@ -429,16 +573,55 @@ const Game = (() => {
       if (!tree) { b.status = 'Keine Bäume mehr'; b.timer = 2; return; }
       st.trees[tree]--; st.dirty.add(tree);
     }
-    if (def.spawns && countPop(b.owner) >= maxPop(b.owner)) {
-      b.status = 'Kein Wohnraum frei'; b.timer = 1.5; return;
-    }
 
     if (def.input) pay(p, def.input);
-    if (def.output) for (const [r, n] of Object.entries(def.output)) p.res[r] += n;
-    if (def.spawns) spawnSoldier(b.owner, b.x, b.y);
+    // Produktion landet im Ausgangslager (wird per Träger geliefert)
+    if (def.output) for (const [r, n] of Object.entries(def.output)) b.out[r] = (b.out[r] || 0) + n;
+    if (def.makesTool) { const t = chooseTool(b); b.out[t] = (b.out[t] || 0) + 1; }
     b.working = true;
     const tribeMult = tribeOf(b.owner).bonus.interval?.[b.type] || 1;
     b.timer = def.interval * tribeMult * (0.9 + Math.random() * 0.2);
+    dispatchGoods(b);
+  }
+
+  /* Werkzeugmacher: baut das aktuell am dringendsten fehlende Werkzeug
+     (Gebäude wartet darauf) – sonst die eingestellte Priorität bzw. reihum. */
+  function chooseTool(b) {
+    const p = st.players[b.owner];
+    if (b.toolType) return b.toolType;   // manueller Wunsch
+    // Werkzeug, für das ein eigenes Gebäude wartet und der Pool leer ist
+    for (const bb of st.buildings) {
+      if (bb.alive && bb.done && bb.owner === b.owner && needsTool(bb.type) && !bb.staffed) {
+        const t = CFG.TOOL_OF[bb.type];
+        if ((p.res[t] || 0) + (b.out[t] || 0) < 1) return t;
+      }
+    }
+    b.toolRR = ((b.toolRR || 0) + 1) % CFG.TOOL_KEYS.length;
+    return CFG.TOOL_KEYS[b.toolRR];
+  }
+
+  /* Kaserne bildet den eingestellten Soldatentyp aus (Waffe + Nahrung + Wohnraum). */
+  function trainAtBarracks(b, dt, def, p) {
+    b.timer -= dt * p.prodMult;
+    if (b.timer > 0) return;
+    b.working = false; b.status = null;
+
+    let type = b.trainType || 'lanze';
+    const affordable = t => canAfford(p, CFG.SOLDIERS[t].cost);
+    if (!affordable(type)) {
+      // KI weicht auf einen bezahlbaren Typ aus; Mensch sieht den Mangel
+      if (p.human) { b.status = 'Waffe/Nahrung fehlt'; b.timer = 1.0; return; }
+      const alt = CFG.SOLDIER_KEYS.find(affordable);
+      if (!alt) { b.status = 'Waffe fehlt'; b.timer = 1.0; return; }
+      type = alt;
+    }
+    if (countPop(b.owner) >= maxPop(b.owner)) { b.status = 'Kein Wohnraum frei'; b.timer = 1.5; return; }
+
+    pay(p, CFG.SOLDIERS[type].cost);
+    spawnSoldier(b.owner, b.x, b.y, type);
+    b.working = true;
+    const tm = tribeOf(b.owner).bonus.trainMult || 1;
+    b.timer = CFG.SOLDIERS[type].train * tm * (0.9 + Math.random() * 0.2);
   }
 
   function findTree(b) {
@@ -480,9 +663,21 @@ const Game = (() => {
   /* ------------------------------------------------ Einheiten-Takt */
 
   function updateUnits(dt) {
-    const S = CFG.SOLDIER;
     for (const u of st.units) {
       u.cd -= dt; u.scan -= dt;
+      if (u.shot > 0) u.shot -= dt;
+
+      // Turm besetzen (eigener Marschbefehl auf eigenen Turm)
+      if (u.tgGar) {
+        const tw = getBuilding(u.tgGar);
+        if (!tw || (tw.garrison || 0) >= CFG.BUILDINGS[tw.type].garrisonMax) { u.tgGar = null; u.path = null; }
+        else if (Math.hypot(u.x - (tw.x + 0.5), u.y - (tw.y + 0.5)) <= 1.3) {
+          tw.garrison = (tw.garrison || 0) + 1;
+          (tw.gtypes || (tw.gtypes = [])).push(u.type);
+          u.removed = true; st.territoryDirty = true; st.dirty.add(idx(tw.x, tw.y));
+          continue;
+        } else { approach(u, tw.x + 0.5, tw.y + 0.5, dt); continue; }
+      }
 
       let tgtU = u.tu ? getUnit(u.tu) : null;
       let tgtB = u.tb ? getBuilding(u.tb) : null;
@@ -492,7 +687,7 @@ const Game = (() => {
       // Automatisch nahe Feinde angreifen, wenn ohne Auftrag
       if (!tgtU && !tgtB && !u.path && u.scan <= 0) {
         u.scan = 0.5;
-        tgtU = acquireUnit(u, S.aggro);
+        tgtU = acquireUnit(u, u.aggro || 4);
         if (tgtU) u.tu = tgtU.id;
         else {
           tgtB = acquireBuilding(u, 3);
@@ -500,29 +695,33 @@ const Game = (() => {
         }
       }
 
-      if (tgtU) { engage(u, tgtU.x, tgtU.y, dt, () => { hitUnit(tgtU, u.dmgU || S.dmgUnit); }); continue; }
-      if (tgtB) { engage(u, tgtB.x + 0.5, tgtB.y + 0.5, dt, () => { hitBuilding(tgtB, u.dmgB || S.dmgBuilding); }); continue; }
+      if (tgtU) { engage(u, tgtU.x, tgtU.y, dt, () => { hitUnit(tgtU, u.dmgU); }); continue; }
+      if (tgtB) { engage(u, tgtB.x + 0.5, tgtB.y + 0.5, dt, () => { hitBuilding(tgtB, u.dmgB); }); continue; }
       if (u.path) followPath(u, dt);
     }
-    st.units = st.units.filter(u => u.hp > 0);
+    st.units = st.units.filter(u => u.hp > 0 && !u.removed);
   }
 
   function engage(u, tx, ty, dt, hit) {
-    const S = CFG.SOLDIER;
+    const range = u.range || 1.1;
     const d = Math.hypot(u.x - tx, u.y - ty);
-    if (d <= S.range) {
-      u.path = null;
-      if (u.cd <= 0) { u.cd = S.cooldown; hit(); }
+    if (d <= range) {
+      u.path = null; u.aim = { x: tx, y: ty };
+      if (u.cd <= 0) { u.cd = u.cool || 0.8; hit(); u.shot = 0.15; }
     } else {
-      // Pfad zum Ziel (regelmäßig auffrischen, Ziele bewegen sich)
-      if (!u.path || u.repath === undefined || (u.repath -= dt) <= 0) {
-        u.repath = 1.0;
-        u.path = astar(Math.floor(u.x), Math.floor(u.y), Math.floor(tx), Math.floor(ty));
-        u.pi = 0;
-      }
-      if (u.path) followPath(u, dt);
-      else moveToward(u, tx, ty, dt);   // Notfall: gerader Weg
+      approach(u, tx, ty, dt);
     }
+  }
+
+  /* Pfad zum (ggf. bewegten) Ziel, regelmäßig auffrischen. */
+  function approach(u, tx, ty, dt) {
+    if (!u.path || u.repath === undefined || (u.repath -= dt) <= 0) {
+      u.repath = 1.0;
+      u.path = astar(Math.floor(u.x), Math.floor(u.y), Math.floor(tx), Math.floor(ty));
+      u.pi = 0;
+    }
+    if (u.path) followPath(u, dt);
+    else moveToward(u, tx, ty, dt);   // Notfall: gerader Weg
   }
 
   function followPath(u, dt) {
@@ -536,7 +735,8 @@ const Game = (() => {
 
   function moveToward(u, tx, ty, dt) {
     const d = Math.hypot(tx - u.x, ty - u.y);
-    const step = CFG.SOLDIER.speed * dt;
+    const step = (u.speed || 2.4) * dt;
+    u.face = tx < u.x ? -1 : 1;
     if (d <= step) { u.x = tx; u.y = ty; return true; }
     u.x += (tx - u.x) / d * step;
     u.y += (ty - u.y) / d * step;
@@ -573,12 +773,24 @@ const Game = (() => {
     if (b.hp <= 0) destroyBuilding(b);
   }
 
+  /* Einen Soldaten aus einem Turm ausrücken lassen. */
+  function sallyGarrison(b) {
+    if (!b.garrison || b.garrison <= 0) return false;
+    b.garrison--;
+    const type = (b.gtypes && b.gtypes.pop()) || 'lanze';
+    spawnSoldier(b.owner, b.x, b.y, type);
+    st.territoryDirty = true;
+    st.dirty.add(idx(b.x, b.y));
+    return true;
+  }
+
   /* ------------------------------------------------ API */
 
   return {
     newGame, restore, update, tryBuild, placeError, demolish,
     commandUnits, countPop, maxPop, buildingAt, astar,
     isEnemy, hasTerrainNear, canAfford, tribeOf, tribeCost,
+    spawnSoldier, sallyGarrison, carrierCap, carriersBusy, needsTool,
     get st() { return st; },
     idx, inB, walkable,
   };

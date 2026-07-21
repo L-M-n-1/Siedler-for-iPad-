@@ -140,10 +140,12 @@ html, body {
   backdrop-filter: blur(6px);
   overflow-x:auto;
 }
-#resbar { display:flex; gap:10px; flex:1; overflow-x:auto; padding:2px 4px; }
-.res-item { white-space:nowrap; font-size:0.95rem; }
+#resbar { display:flex; gap:8px; flex:1; overflow-x:auto; padding:2px 4px; align-items:center; }
+.res-item { white-space:nowrap; font-size:0.92rem; }
 .res-item b { font-weight:600; color:#fff; }
-#popbar { white-space:nowrap; font-size:0.95rem; padding:0 4px; }
+.res-item.zero { opacity:0.4; }
+.res-div { flex:none; width:1px; height:18px; background:rgba(255,255,255,0.22); }
+#popbar, #carrierbar { white-space:nowrap; font-size:0.92rem; padding:0 4px; }
 
 .hudbtn {
   flex:none;
@@ -198,6 +200,17 @@ html, body {
 }
 #info-title { font-weight:700; margin-bottom:6px; }
 #info-body { font-size:0.85rem; color:#c6d8e8; line-height:1.4; margin-bottom:10px; }
+.info-desc { margin-bottom:6px; }
+#info-dyn { margin:6px 0; }
+.info-choose { display:flex; align-items:center; gap:6px; margin:8px 0; flex-wrap:wrap; }
+.info-lbl { color:#9fb6c9; font-size:0.78rem; }
+.chooser { display:flex; gap:4px; flex-wrap:wrap; }
+.chooser button {
+  min-width:30px; height:30px; border:2px solid transparent; border-radius:7px;
+  background:rgba(255,255,255,0.08); color:#eee; cursor:pointer; font-size:0.95rem;
+}
+.chooser button.on { border-color:#ffd27f; background:rgba(255,210,127,0.16); }
+#info-sally { margin-top:6px; }
 .info-btns { display:flex; gap:8px; }
 
 #toast {
