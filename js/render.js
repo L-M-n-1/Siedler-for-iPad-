@@ -281,6 +281,9 @@ const Render = (() => {
     kaserne:    { w: 1.25, h: 1.7 },
     lagerhaus:  { w: 1.3,  h: 1.4 },
     gestuet:    { w: 1.25, h: 1.45 },
+    markt:      { w: 1.5,  h: 1.35 },
+    belagerung: { w: 1.35, h: 1.6 },
+    brauerei:   { w: 1.2,  h: 1.6 },
     default:    { w: 1.1,  h: 1.55 },
   };
   const isTowerSprite = t => t === 'wachturm' || t === 'wachposten';
@@ -354,17 +357,34 @@ const Render = (() => {
     g.lineWidth = SS;
     g.strokeRect(x0, wallTop, wallW, wallH);
 
-    // Tür + Fenster
-    g.fillStyle = 'rgba(45,32,20,0.9)';
-    g.beginPath();
-    g.arc(W / 2, groundY, 5.5 * SS, Math.PI, 0);
-    g.rect(W / 2 - 5.5 * SS, groundY - 0.5, 11 * SS, 0.5);
-    g.fill();
-    g.fillStyle = 'rgba(35,28,18,0.85)';
-    g.fillRect(x0 + wallW * 0.15, wallTop + wallH * 0.28, 4 * SS, 5 * SS);
-    g.fillRect(x0 + wallW * 0.68, wallTop + wallH * 0.28, 4 * SS, 5 * SS);
+    // Mauerfugen (dezente Textur)
+    g.strokeStyle = 'rgba(0,0,0,0.06)'; g.lineWidth = SS;
+    for (let ry = 1; ry < 3; ry++) {
+      const yy = wallTop + wallH * ry / 3;
+      g.beginPath(); g.moveTo(x0, yy); g.lineTo(x0 + wallW, yy); g.stroke();
+    }
+    // Tür mit Rahmen
+    g.fillStyle = '#5a3f24';
+    g.beginPath(); g.arc(W / 2, groundY, 6 * SS, Math.PI, 0); g.rect(W / 2 - 6 * SS, groundY - 0.5, 12 * SS, 0.5); g.fill();
+    g.fillStyle = 'rgba(30,20,12,0.92)';
+    g.beginPath(); g.arc(W / 2, groundY, 4.6 * SS, Math.PI, 0); g.rect(W / 2 - 4.6 * SS, groundY - 0.5, 9.2 * SS, 0.5); g.fill();
+    // Fenster mit hellem Rahmen + Kreuzsprosse
+    for (const fx of [x0 + wallW * 0.16, x0 + wallW * 0.66]) {
+      const fy = wallTop + wallH * 0.26, fw = 5 * SS, fh = 6 * SS;
+      g.fillStyle = shade(style.wall, 1.2); g.fillRect(fx - 0.8 * SS, fy - 0.8 * SS, fw + 1.6 * SS, fh + 1.6 * SS);
+      g.fillStyle = 'rgba(35,45,55,0.9)'; g.fillRect(fx, fy, fw, fh);
+      g.strokeStyle = shade(style.wall, 1.25); g.lineWidth = 0.8 * SS;
+      g.beginPath(); g.moveTo(fx + fw / 2, fy); g.lineTo(fx + fw / 2, fy + fh);
+      g.moveTo(fx, fy + fh / 2); g.lineTo(fx + fw, fy + fh / 2); g.stroke();
+    }
 
     drawRoof(g, style, x0 - 3 * SS, x0 + wallW + 3 * SS, wallTop, 4 * SS);
+    // Dachtextur: Ziegelreihen
+    g.strokeStyle = 'rgba(0,0,0,0.10)'; g.lineWidth = 0.8 * SS;
+    for (let k = 1; k <= 2; k++) {
+      const yy = wallTop - (wallTop - (wallTop - 6 * SS)) * 0;
+      g.beginPath(); g.moveTo(x0, wallTop - k * 3 * SS); g.lineTo(x0 + wallW, wallTop - k * 3 * SS); g.stroke();
+    }
   }
 
   /* Wachturm: hoher schmaler Turm mit Zinnenkranz. */
@@ -539,6 +559,35 @@ const Render = (() => {
     g.fill();
   }
 
+  /* Katapult: Holzwagen mit Rädern, Wurfarm und farbigem Wimpel. */
+  function drawCatapult(g, cx, H, W, col) {
+    const baseY = H - 5 * SS;
+    // Räder
+    g.fillStyle = '#4a3420';
+    g.beginPath(); g.arc(cx - 8 * SS, baseY, 4 * SS, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(cx + 8 * SS, baseY, 4 * SS, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#7a5a30'; g.lineWidth = 1.4 * SS;
+    g.beginPath(); g.arc(cx - 8 * SS, baseY, 2 * SS, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(cx + 8 * SS, baseY, 2 * SS, 0, Math.PI * 2); g.stroke();
+    // Rahmen
+    g.fillStyle = '#6b4a2c';
+    g.fillRect(cx - 11 * SS, baseY - 6 * SS, 22 * SS, 4 * SS);
+    g.fillStyle = '#8a6741';
+    g.fillRect(cx - 11 * SS, baseY - 6 * SS, 22 * SS, 1.4 * SS);
+    // Stützbock
+    g.strokeStyle = '#5a3f24'; g.lineWidth = 2.4 * SS;
+    g.beginPath(); g.moveTo(cx - 3 * SS, baseY - 6 * SS); g.lineTo(cx, baseY - 14 * SS);
+    g.moveTo(cx + 3 * SS, baseY - 6 * SS); g.lineTo(cx, baseY - 14 * SS); g.stroke();
+    // Wurfarm mit Schleuderkorb
+    g.strokeStyle = '#7a5a30'; g.lineWidth = 2 * SS;
+    g.beginPath(); g.moveTo(cx, baseY - 13 * SS); g.lineTo(cx + 9 * SS, baseY - 18 * SS); g.stroke();
+    g.fillStyle = '#3a2c1c';
+    g.beginPath(); g.arc(cx + 9 * SS, baseY - 18 * SS, 2.6 * SS, 0, Math.PI * 2); g.fill();
+    // Wimpel in Spielerfarbe
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(cx - 11 * SS, baseY - 6 * SS); g.lineTo(cx - 15 * SS, baseY - 4 * SS); g.lineTo(cx - 11 * SS, baseY - 2 * SS); g.closePath(); g.fill();
+  }
+
   /* ==================================================== Soldaten-Sprites */
 
   function getUnitSprite(owner, type) {
@@ -551,15 +600,17 @@ const Render = (() => {
   function makeUnitSprite(owner, type) {
     const col = CFG.COLORS[owner];
     const mounted = type === 'reiter';
-    const W = 20 * SS, H = (mounted ? 28 : 24) * SS;
+    const siege = type === 'katapult';
+    const W = (siege ? 28 : 20) * SS, H = (mounted ? 28 : siege ? 24 : 24) * SS;
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const g = c.getContext('2d');
     const cx = W / 2;
 
     g.fillStyle = 'rgba(0,0,0,0.28)';
-    g.beginPath(); g.ellipse(cx, H - 2 * SS, (mounted ? 8 : 6) * SS, 2.4 * SS, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(cx, H - 2 * SS, (siege ? 11 : mounted ? 8 : 6) * SS, 2.6 * SS, 0, 0, Math.PI * 2); g.fill();
 
+    if (siege) { drawCatapult(g, cx, H, W, col); return { c, w: W / SS, h: H / SS }; }
     if (mounted) drawHorse(g, cx, H, col);
 
     const bodyY = mounted ? H - 17 * SS : H - 15 * SS;   // Rumpf-Oberkante
@@ -982,6 +1033,19 @@ const Render = (() => {
       ctx.fillStyle = `rgba(255,225,120,${(0.3 + 0.25 * Math.sin(t * 3 + b.id)).toFixed(2)})`;
       ctx.beginPath(); ctx.arc(x + spr.w * 0.5, y + spr.h * 0.3, 2, 0, Math.PI * 2); ctx.fill();
     }
+    // Brauerei-Dampf
+    if (b.working && b.type === 'brauerei') {
+      for (let k = 0; k < 2; k++) {
+        const ph = (t * 0.6 + k * 0.5) % 1;
+        ctx.fillStyle = `rgba(230,220,255,${(0.22 * (1 - ph)).toFixed(2)})`;
+        ctx.beginPath(); ctx.arc(x + spr.w * 0.5, y + spr.h * 0.15 - ph * 12, 2.5 + ph * 2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // Brunnen-Wasserspiegel-Glanz
+    if (b.type === 'brunnen') {
+      ctx.fillStyle = `rgba(120,180,255,${(0.4 + 0.2 * Math.sin(t * 2 + b.id)).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(x + spr.w * 0.5, y + spr.h * 0.72, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
     // Turmschuss auf Ziel
     if (b.firing) {
       const tgt = st.units.find(u => u.id === b.firing);
@@ -994,11 +1058,12 @@ const Render = (() => {
 
   function drawUnit(u) {
     const spr = getUnitSprite(u.owner, u.type);
-    const moving = !!u.path;
+    const siege = u.type === 'katapult';
+    const moving = !!u.path && !siege;
     const bob = moving ? Math.abs(Math.sin((u.x + u.y) * 3.4)) * 2 : 0;
-    // kurzer Ausfall beim Zuschlagen
+    // kurzer Ausfall beim Zuschlagen (Katapult: Rückstoß)
     let lunge = 0;
-    if (u.shot > 0 && u.aim) lunge = (u.face === -1 ? -1 : 1) * 3 * (u.shot / 0.15);
+    if (u.shot > 0 && u.aim) lunge = (u.face === -1 ? -1 : 1) * (siege ? -4 : 3) * (u.shot / 0.15);
     ctx.save();
     ctx.translate(u.x * TS + lunge, u.y * TS - spr.h + 4 - bob);
     ctx.scale(u.face === -1 ? -1 : 1, 1);
@@ -1013,6 +1078,15 @@ const Render = (() => {
     if (u.type === 'bogen' && u.shot > 0 && u.aim) {
       ctx.strokeStyle = 'rgba(240,240,220,0.8)'; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.moveTo(u.x * TS, u.y * TS - 6); ctx.lineTo(u.aim.x * TS, u.aim.y * TS); ctx.stroke();
+    }
+    // Katapult-Geschoss als fliegender Bogen
+    if (siege && u.shot > 0 && u.aim) {
+      const pr = 1 - u.shot / 0.15;               // 0→1 Flugfortschritt (kurz)
+      const sxp = u.x * TS, syp = u.y * TS - 14;
+      const ex = u.aim.x * TS, ey = u.aim.y * TS;
+      const mx = sxp + (ex - sxp) * pr, my = syp + (ey - syp) * pr - Math.sin(pr * Math.PI) * 18;
+      ctx.fillStyle = '#5a5148';
+      ctx.beginPath(); ctx.arc(mx, my, 2.6, 0, Math.PI * 2); ctx.fill();
     }
   }
 

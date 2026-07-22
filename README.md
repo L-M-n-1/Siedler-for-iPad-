@@ -57,6 +57,17 @@ sichert das Spiel automatisch.
 
 Zerstöre alle gegnerischen Hauptquartiere, bevor deins fällt!
 
+### Übersicht, Kategorien & Materialströme
+
+- **📋 Übersicht** (Knopf oben): zeigt alle Bestände nach Gruppen (Bau, Nahrung, Bergbau,
+  Werkzeug, Militär) sowie **Siedler** (Bevölkerung, Lastenträger, Geologen) und **Truppen**
+  (Einheiten nach Typ + Turmbesatzung).
+- **Bauleiste nach Kategorien**: Rohstoffe · Nahrung · Werkzeug · Militär · Logistik.
+- **Materialströme steuern**: Jedes Produktionsgebäude lässt sich **pausieren** und mit
+  **Priorität** (Niedrig/Normal/Hoch) versehen (Info-Panel). Im Reiter **⚖️ Verteilung** der
+  Übersicht legst du je Gebäudetyp fest, wer knappe Waren (Kohle, Eisen, Holz, Getreide, Wasser)
+  zuerst bekommt – hoch priorisierte Verbraucher werden zuerst bedient.
+
 ### Warenketten
 
 | Kette | Gebäude |
@@ -64,13 +75,18 @@ Zerstöre alle gegnerischen Hauptquartiere, bevor deins fällt!
 | Bauholz | 🪓 Holzfäller → 🪚 Sägewerk (Bretter) |
 | Stein | 🪨 Steinbruch (braucht Berge in der Nähe) |
 | Nahrung | 🎣 Fischerhütte (am Wasser) · 🌾 Bauernhof → ⚙️ Mühle → 🍞 Bäckerei |
+| Nahrung II | ⛲ Brunnen (Wasser) · 🐖 Schweinefarm → 🥩 Metzgerei (viel Nahrung) |
+| Bier | 🍺 Brauerei (Getreide + Wasser) – hebt die Moral der Bergleute (Minen fördern schneller) |
 | Bergbau | ⚫ Kohlemine · ⛏️ Eisenmine (am Berg, verbrauchen Nahrung) → 🔥 Eisenschmelze (Erz + Kohle → Eisen) |
 | Werkzeuge | 🛠️ Werkzeugmacher (Eisen + Kohle → Axt, Säge, Spitzhacke, Sense, Angel, Hammer) |
 | Gold | 🔍 Geologe findet Goldvorkommen → 🟡 Goldmine (Golderz) → 🪙 Goldschmiede (Gold) |
 | Waffen | 🗡️ Schwertschmiede (Eisen+Kohle) · 🔱 Lanzenschmiede (Eisen+Holz) · 🏹 Bogenmacher (Holz) · 🐎 Gestüt (Getreide→Pferd) |
-| Militär | 🛡️ Kaserne bildet je nach Waffe Soldaten aus · 🏠 Wohnhaus (mehr Soldatenplätze) |
-| Logistik | 📦 Lagerhaus erhöht die Zahl der Lastenträger und nimmt Waren an |
+| Militär | 🛡️ Kaserne bildet je nach Waffe Soldaten aus · ⚙️ Belagerungswerkstatt baut Katapulte · 🏠 Wohnhaus (mehr Soldatenplätze) |
+| Logistik | 📦 Lagerhaus · 🏪 Markt – erhöhen die Zahl der Lastenträger und nehmen Waren an |
 | Gebiet | 🚩 Wachposten · 🗼 Wachturm · 🏯 Festung – erweitern das Gebiet, sobald sie besetzt sind |
+
+Der **Katapult** (aus der Belagerungswerkstatt) ist langsam, aber verheerend gegen Gebäude und
+Festungen – ideal, um gegnerische Bollwerke aus der Distanz zu knacken.
 
 ### Geologe & Gold
 
@@ -126,6 +142,7 @@ auswählen und den eigenen Turm antippen. Über das Info-Panel kannst du Soldate
   Gegner werden angegriffen, freie Felder sind Marschbefehle, ein **eigener Turm** wird besetzt
 - **Kaserne/Werkzeugmacher**: im Info-Panel Soldatentyp bzw. Werkzeug-Priorität wählen
 - **🔍 Geologe**: Knopf antippen, dann auf ein Berggebiet tippen – deckt Vorkommen auf
+- **📋 Übersicht**: Bestände, Siedler, Truppen und der Verteilungs-Reiter für Materialströme
 - **☰**: Pause/Menü · **▶ 1×/2×/3×**: Spielgeschwindigkeit
 
 ## Grafik & Animationen
@@ -148,10 +165,12 @@ damit es flüssig und offline auf dem iPad läuft):
 - Verbesserte 2.5D-Grafik: dynamische Schatten, Tag/Nacht-Beleuchtung, animierte Figuren
   (Geh-Zyklus, Reiter), arbeitende Gebäude, wehende Fahnen, Vorkommen-Schilder, Rang-Abzeichen
 - Tiefe Wirtschaft: Werkzeug-Gate (Arbeiter + Werkzeug je Gebäude), Warenketten mit Kohle,
-  Gold (Geologe → Goldmine → Goldschmiede), Werkzeugen, vier Waffen und Pferden, sichtbare
-  Träger-Logistik mit Trägerlimit
-- Vier Soldatentypen (Nah-/Fernkampf/berittene) mit Gold-Beförderung, drei Turmstufen mit
-  Besatzungspflicht, versteckte Bergvorkommen zum Erkunden
+  Gold (Geologe → Goldmine → Goldschmiede), zweiter Nahrungskette (Schwein/Metzgerei), Bier
+  (Minen-Bonus), Werkzeugen, vier Waffen und Pferden, sichtbare Träger-Logistik mit Trägerlimit
+- Bestands-Übersicht (Untermenü), Gebäudekategorien und steuerbare Materialströme
+  (Pause + Priorität je Gebäude, Verteilung je Gebäudetyp)
+- Fünf Kampfeinheiten (Lanze/Schwert/Bogen/Reiter/Katapult) mit Gold-Beförderung, drei Turmstufen
+  mit Besatzungspflicht, versteckte Bergvorkommen zum Erkunden
 - Seed-basierte Kartengenerierung (Wert-Rauschen), A*-Wegfindung, Wirtschafts-KI
 - Spielstände als JSON im localStorage (3 Slots + Autosave)
 - PWA: Manifest + Service Worker für Vollbild und Offline-Betrieb

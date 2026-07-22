@@ -37,7 +37,7 @@ const Game = (() => {
         name: po.human ? 'Du' : CFG.PLAYER_NAMES[i],
         color: CFG.COLORS[i],
         res, prodMult: po.human ? 1 : diff.prodMult,
-        defeated: false, geoCd: 0,
+        defeated: false, geoCd: 0, typePrio: {},
         ai: po.human ? null : AI.newMemory(),
       });
       const s = map.starts[i];
@@ -59,7 +59,7 @@ const Game = (() => {
       found: Uint8Array.from(s.found),
       owner: new Int8Array(s.w * s.h).fill(-1),
       buildings: s.buildings, units: s.units, carriers: [],
-      players: s.players.map(p => ({ ...p, geoCd: p.geoCd || 0, ai: p.human ? null : (p.ai || AI.newMemory()) })),
+      players: s.players.map(p => ({ ...p, geoCd: p.geoCd || 0, typePrio: p.typePrio || {}, ai: p.human ? null : (p.ai || AI.newMemory()) })),
       time: s.time, speed: 1, over: s.over || null,
       nextId: s.nextId,
       dirty: new Set(), territoryDirty: true,
@@ -195,7 +195,8 @@ const Game = (() => {
       staffed: !needsTool(type),     // Werkzeug-Gebäude erst nach Besetzung tätig
       out: {}, hasCarrier: false,     // Ausgangslager + laufende Lieferung
       garrison: 0, gtypes: [],        // Turm-Besatzung (Anzahl + Typen)
-      toolType: null, trainType: 'lanze',
+      toolType: null, trainType: def.siege ? 'katapult' : 'lanze',
+      paused: false, prio: (st.players[pid].typePrio && st.players[pid].typePrio[type]) || 1,
     };
     st.buildings.push(b);
     st.dirty.add(idx(x, y));
@@ -443,7 +444,10 @@ const Game = (() => {
 
     if (st.territoryDirty) { recomputeTerritory(); }
 
-    for (const b of st.buildings) if (b.alive) updateBuilding(b, dt);
+    // Nach Priorität sortiert abarbeiten: hoch priorisierte Verbraucher bekommen
+    // knappe geteilte Waren (Kohle/Eisen/Holz/Getreide) zuerst.
+    const order = st.buildings.filter(b => b.alive).sort((a, b) => (b.prio || 1) - (a.prio || 1));
+    for (const b of order) updateBuilding(b, dt);
     st.buildings = st.buildings.filter(b => b.alive);
 
     updateCarriers(dt);
@@ -655,6 +659,7 @@ const Game = (() => {
     // Fertige Waren zum Lager schaffen (auch für nicht-produzierende Zustände)
     dispatchGoods(b);
 
+    if (b.paused) { b.working = false; b.status = 'Pausiert'; return; }
     if (def.trains) { trainAtBarracks(b, dt, def, p); return; }
     if (!def.interval) return;   // Lager, Wohnhaus, Militär: keine Produktion
 
@@ -698,7 +703,13 @@ const Game = (() => {
     if (def.makesTool) { const t = chooseTool(b); b.out[t] = (b.out[t] || 0) + 1; }
     b.working = true;
     const tribeMult = tribeOf(b.owner).bonus.interval?.[b.type] || 1;
-    b.timer = def.interval * tribeMult * (0.9 + Math.random() * 0.2);
+    // Bier-Bonus: Minen fördern schneller, solange Bier vorrätig (Bergleute-Moral)
+    let beerMult = 1;
+    if (CFG.MINES.includes(b.type) && (p.res.bier || 0) > 0) {
+      beerMult = CFG.BEER_BONUS;
+      if (Math.random() < 0.3) p.res.bier--;   // Bier wird langsam getrunken
+    }
+    b.timer = def.interval * tribeMult * beerMult * (0.9 + Math.random() * 0.2);
     dispatchGoods(b);
   }
 
@@ -724,13 +735,14 @@ const Game = (() => {
     if (b.timer > 0) return;
     b.working = false; b.status = null;
 
-    let type = b.trainType || 'lanze';
+    const pool = def.siege ? CFG.SIEGE_KEYS : CFG.SOLDIER_KEYS;
+    let type = pool.includes(b.trainType) ? b.trainType : pool[0];
     const affordable = t => canAfford(p, CFG.SOLDIERS[t].cost);
     if (!affordable(type)) {
       // KI weicht auf einen bezahlbaren Typ aus; Mensch sieht den Mangel
-      if (p.human) { b.status = 'Waffe/Nahrung fehlt'; b.timer = 1.0; return; }
-      const alt = CFG.SOLDIER_KEYS.find(affordable);
-      if (!alt) { b.status = 'Waffe fehlt'; b.timer = 1.0; return; }
+      if (p.human) { b.status = 'Rohstoffe fehlen'; b.timer = 1.0; return; }
+      const alt = pool.find(affordable);
+      if (!alt) { b.status = 'Rohstoffe fehlen'; b.timer = 1.0; return; }
       type = alt;
     }
     if (countPop(b.owner) >= maxPop(b.owner)) { b.status = 'Kein Wohnraum frei'; b.timer = 1.5; return; }
@@ -805,11 +817,18 @@ const Game = (() => {
       // Automatisch nahe Feinde angreifen, wenn ohne Auftrag
       if (!tgtU && !tgtB && !u.path && u.scan <= 0) {
         u.scan = 0.5;
-        tgtU = acquireUnit(u, u.aggro || 4);
-        if (tgtU) u.tu = tgtU.id;
-        else {
-          tgtB = acquireBuilding(u, 3);
+        const siege = u.type === 'katapult';
+        if (siege) {                     // Katapult bevorzugt Gebäude in Reichweite
+          tgtB = acquireBuilding(u, Math.max(3, u.range));
           if (tgtB) u.tb = tgtB.id;
+          else { tgtU = acquireUnit(u, u.aggro || 4); if (tgtU) u.tu = tgtU.id; }
+        } else {
+          tgtU = acquireUnit(u, u.aggro || 4);
+          if (tgtU) u.tu = tgtU.id;
+          else {
+            tgtB = acquireBuilding(u, Math.max(3, u.range || 3));
+            if (tgtB) u.tb = tgtB.id;
+          }
         }
       }
 
@@ -891,6 +910,12 @@ const Game = (() => {
     if (b.hp <= 0) destroyBuilding(b);
   }
 
+  /* Verteilungs-Priorität für einen Gebäudetyp setzen (und auf Bestand anwenden). */
+  function setTypePrio(pid, type, prio) {
+    st.players[pid].typePrio[type] = prio;
+    for (const b of st.buildings) if (b.alive && b.owner === pid && b.type === type) b.prio = prio;
+  }
+
   /* Einen Soldaten aus einem Turm ausrücken lassen. */
   function sallyGarrison(b) {
     if (!b.garrison || b.garrison <= 0) return false;
@@ -909,7 +934,7 @@ const Game = (() => {
     commandUnits, countPop, maxPop, buildingAt, astar,
     isEnemy, hasTerrainNear, canAfford, tribeOf, tribeCost,
     spawnSoldier, sallyGarrison, carrierCap, carriersBusy, needsTool,
-    dispatchGeologe, geologeActive,
+    dispatchGeologe, geologeActive, setTypePrio,
     get st() { return st; },
     idx, inB, walkable,
   };

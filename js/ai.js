@@ -16,16 +16,16 @@ const AI = (() => {
      Werkzeug-/Kohlekette früh, damit das Werkzeug-Gate nicht blockiert. */
   const ORDER = [
     ['holzfaeller', 1], ['saegewerk', 1], ['steinbruch', 1], ['bauernhof', 1],
-    ['muehle', 1], ['baeckerei', 1], ['holzfaeller', 2],
+    ['muehle', 1], ['baeckerei', 1], ['holzfaeller', 2], ['brunnen', 1],
     ['kohlemine', 1], ['eisenmine', 1], ['schmelze', 1], ['werkzeugmacher', 1],
     ['wohnhaus', 1], ['kaserne', 1], ['speermacher', 1], ['wachposten', 1],
-    ['fischer', 1], ['schwertschmiede', 1], ['wohnhaus', 2], ['wachturm', 1],
-    ['bogenmacher', 1], ['lagerhaus', 1], ['holzfaeller', 3], ['saegewerk', 2],
-    ['eisenmine', 2], ['schmelze', 2], ['gestuet', 1], ['kaserne', 2],
-    ['goldmine', 1], ['goldschmiede', 1],
+    ['fischer', 1], ['brauerei', 1], ['schwertschmiede', 1], ['wohnhaus', 2], ['wachturm', 1],
+    ['bogenmacher', 1], ['lagerhaus', 1], ['schweinefarm', 1], ['metzgerei', 1],
+    ['holzfaeller', 3], ['saegewerk', 2], ['eisenmine', 2], ['schmelze', 2],
+    ['gestuet', 1], ['kaserne', 2], ['markt', 1], ['goldmine', 1], ['goldschmiede', 1],
     ['wachturm', 2], ['wohnhaus', 3], ['werkzeugmacher', 2], ['schwertschmiede', 2],
-    ['steinbruch', 2], ['bauernhof', 2], ['muehle', 2], ['baeckerei', 2],
-    ['wohnhaus', 4], ['festung', 1], ['wachturm', 3], ['kaserne', 3],
+    ['steinbruch', 2], ['bauernhof', 2], ['muehle', 2], ['baeckerei', 2], ['brunnen', 2],
+    ['wohnhaus', 4], ['festung', 1], ['belagerung', 1], ['wachturm', 3], ['kaserne', 3],
     ['speermacher', 2], ['goldmine', 2], ['goldschmiede', 2], ['wohnhaus', 5], ['wachturm', 4],
   ];
 

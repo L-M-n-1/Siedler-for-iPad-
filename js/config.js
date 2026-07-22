@@ -6,7 +6,7 @@ const CFG = {
   T: { GRASS: 0, WATER: 1, MOUNTAIN: 2, SAND: 3 },
 
   /* Waren mit Gruppe (für HUD-Gruppierung). */
-  RES: ['holz', 'bretter', 'stein', 'getreide', 'mehl', 'nahrung',
+  RES: ['holz', 'bretter', 'stein', 'getreide', 'mehl', 'nahrung', 'wasser', 'schwein', 'bier',
         'erz', 'kohle', 'eisen', 'golderz', 'gold',
         'axt', 'saege', 'hacke', 'sense', 'angel', 'hammer',
         'schwert', 'lanze', 'bogen', 'pferd'],
@@ -17,6 +17,9 @@ const CFG = {
     getreide: { name: 'Getreide',   icon: '🌾', grp: 'nahrung' },
     mehl:     { name: 'Mehl',       icon: '🧂', grp: 'nahrung' },
     nahrung:  { name: 'Nahrung',    icon: '🍖', grp: 'nahrung' },
+    wasser:   { name: 'Wasser',     icon: '💧', grp: 'nahrung' },
+    schwein:  { name: 'Schwein',    icon: '🐖', grp: 'nahrung' },
+    bier:     { name: 'Bier',       icon: '🍺', grp: 'nahrung' },
     erz:      { name: 'Eisenerz',   icon: '🟤', grp: 'berg' },
     kohle:    { name: 'Kohle',      icon: '⚫', grp: 'berg' },
     eisen:    { name: 'Eisen',      icon: '🔩', grp: 'berg' },
@@ -44,7 +47,7 @@ const CFG = {
 
   /* Startvorräte inkl. Starter-Werkzeugen, damit die erste Bauwelle nicht blockiert. */
   START_RES: {
-    holz: 14, bretter: 16, stein: 12, getreide: 0, mehl: 0, nahrung: 10,
+    holz: 14, bretter: 16, stein: 12, getreide: 0, mehl: 0, nahrung: 10, wasser: 0, schwein: 0, bier: 0,
     erz: 0, kohle: 4, eisen: 2, golderz: 0, gold: 0,
     axt: 2, saege: 2, hacke: 3, sense: 2, angel: 1, hammer: 3,
     schwert: 0, lanze: 2, bogen: 0, pferd: 0,
@@ -114,6 +117,7 @@ const CFG = {
     werkzeugmacher: 'hammer', schwertschmiede: 'hammer',
     speermacher: 'hammer', bogenmacher: 'hammer',
     goldmine: 'hacke', goldschmiede: 'hammer',
+    schweinefarm: 'sense', metzgerei: 'hammer', brauerei: 'hammer',
   },
   TOOL_KEYS: ['axt', 'saege', 'hacke', 'sense', 'angel', 'hammer'],
 
@@ -145,6 +149,18 @@ const CFG = {
     baeckerei:   { name: 'Bäckerei', icon: '🍞', hp: 150, cost: { bretter: 2, stein: 2 }, buildTime: 10,
                    interval: 6, input: { mehl: 1 }, output: { nahrung: 2 },
                    desc: 'Backt aus Mehl nahrhaftes Brot (2 Nahrung). Braucht einen Hammer.' },
+    brunnen:     { name: 'Brunnen', icon: '⛲', hp: 120, cost: { bretter: 1, stein: 3 }, buildTime: 8,
+                   interval: 6, output: { wasser: 1 },
+                   desc: 'Schöpft Wasser – für Brauerei und Vieh.' },
+    schweinefarm:{ name: 'Schweinefarm', icon: '🐖', hp: 150, cost: { bretter: 3, stein: 1 }, buildTime: 12,
+                   interval: 9, input: { getreide: 1, wasser: 1 }, output: { schwein: 1 },
+                   desc: 'Mästet Schweine aus Getreide und Wasser. Braucht eine Sense.' },
+    metzgerei:   { name: 'Metzgerei', icon: '🥩', hp: 150, cost: { bretter: 2, stein: 2 }, buildTime: 11,
+                   interval: 7, input: { schwein: 1 }, output: { nahrung: 3 },
+                   desc: 'Verarbeitet Schweine zu reichlich Nahrung (3). Braucht einen Hammer.' },
+    brauerei:    { name: 'Brauerei', icon: '🍺', hp: 150, cost: { bretter: 3, stein: 2 }, buildTime: 12,
+                   interval: 9, input: { getreide: 1, wasser: 1 }, output: { bier: 1 },
+                   desc: 'Braut Bier aus Getreide und Wasser – hebt die Moral der Bergleute (Minen fördern schneller). Braucht einen Hammer.' },
 
     kohlemine:   { name: 'Kohlemine', icon: '⚫', hp: 150, cost: { bretter: 3, stein: 2 }, buildTime: 12,
                    interval: 8, input: { nahrung: 1 }, output: { kohle: 1 }, terrainNeed: { t: 2, r: 2 },
@@ -182,6 +198,9 @@ const CFG = {
     lagerhaus:   { name: 'Lagerhaus', icon: '📦', hp: 220, cost: { bretter: 3, stein: 3 }, buildTime: 12,
                    storage: true, carriers: 4,
                    desc: 'Nimmt Waren aus der Umgebung an und stellt mehr Lastenträger (+4).' },
+    markt:       { name: 'Markt', icon: '🏪', hp: 200, cost: { bretter: 4, stein: 2 }, buildTime: 13,
+                   storage: true, carriers: 6,
+                   desc: 'Großer Umschlagplatz: viele Lastenträger (+6) und Verteil-Knotenpunkt.' },
     wohnhaus:    { name: 'Wohnhaus', icon: '🏠', hp: 150, cost: { bretter: 3, stein: 2 }, buildTime: 10,
                    pop: 4,
                    desc: 'Bietet Wohnraum für 4 weitere Soldaten.' },
@@ -199,16 +218,44 @@ const CFG = {
     kaserne:     { name: 'Kaserne', icon: '🛡️', hp: 250, cost: { bretter: 4, stein: 4 }, buildTime: 15,
                    trains: true,
                    desc: 'Bildet Soldaten aus (Waffe + Nahrung, braucht freien Wohnraum). Typ wählbar.' },
+    belagerung:  { name: 'Belagerungswerkstatt', icon: '⚙️', hp: 260, cost: { bretter: 5, stein: 4 }, buildTime: 18,
+                   trains: true, siege: true,
+                   desc: 'Baut Katapulte – langsam, aber verheerend gegen Gebäude und Festungen.' },
   },
+
+  /* Gebäudekategorien für die Bauleiste. */
+  BUILD_CATS: [
+    { id: 'rohstoff', name: 'Rohstoffe', icon: '🪵' },
+    { id: 'nahrung',  name: 'Nahrung',   icon: '🍞' },
+    { id: 'werkzeug', name: 'Werkzeug',  icon: '🛠️' },
+    { id: 'militaer', name: 'Militär',   icon: '⚔️' },
+    { id: 'logistik', name: 'Logistik',  icon: '📦' },
+  ],
+  BUILD_CAT: {
+    holzfaeller: 'rohstoff', saegewerk: 'rohstoff', steinbruch: 'rohstoff',
+    kohlemine: 'rohstoff', eisenmine: 'rohstoff', goldmine: 'rohstoff',
+    fischer: 'nahrung', bauernhof: 'nahrung', muehle: 'nahrung', baeckerei: 'nahrung',
+    brunnen: 'nahrung', schweinefarm: 'nahrung', metzgerei: 'nahrung', brauerei: 'nahrung',
+    schmelze: 'werkzeug', werkzeugmacher: 'werkzeug', goldschmiede: 'werkzeug',
+    schwertschmiede: 'militaer', speermacher: 'militaer', bogenmacher: 'militaer',
+    gestuet: 'militaer', kaserne: 'militaer', belagerung: 'militaer',
+    wachposten: 'militaer', wachturm: 'militaer', festung: 'militaer',
+    lagerhaus: 'logistik', markt: 'logistik', wohnhaus: 'logistik',
+  },
+  /* Schlüsselwaren, deren Verteilung im Verteilungsmenü einstellbar ist. */
+  DIST_GOODS: ['kohle', 'eisen', 'holz', 'getreide', 'wasser'],
 
   /* Reihenfolge in der Bauleiste. */
   BUILD_ORDER: ['holzfaeller', 'saegewerk', 'steinbruch', 'fischer', 'bauernhof', 'muehle', 'baeckerei',
+                'brunnen', 'schweinefarm', 'metzgerei', 'brauerei',
                 'kohlemine', 'eisenmine', 'schmelze', 'werkzeugmacher',
                 'schwertschmiede', 'speermacher', 'bogenmacher', 'gestuet',
                 'goldmine', 'goldschmiede',
-                'lagerhaus', 'wohnhaus', 'wachposten', 'wachturm', 'festung', 'kaserne'],
+                'lagerhaus', 'markt', 'wohnhaus', 'wachposten', 'wachturm', 'festung', 'kaserne', 'belagerung'],
 
   MILITARY: ['wachposten', 'wachturm', 'festung'],
+  MINES: ['steinbruch', 'kohlemine', 'eisenmine', 'goldmine'],
+  BEER_BONUS: 0.75,             // Minen-Intervall-Faktor bei vorrätigem Bier (schneller)
 
   /* Soldatentypen: eigene Werte und Ausbildungskosten (Waffe + Nahrung, ggf. Pferd). */
   SOLDIERS: {
@@ -224,8 +271,12 @@ const CFG = {
     reiter:  { name: 'Reiter', short: 'Reiter', icon: '🐎', unicon: '🐎',
                hp: 120, dmgUnit: 17, dmgBuilding: 14, range: 1.2, aggro: 5,   speed: 3.7, cooldown: 0.8,
                train: 11, cost: { schwert: 1, pferd: 1, nahrung: 1 } },
+    katapult:{ name: 'Katapult', short: 'Katapult', icon: '⚙️', unicon: '☄',
+               hp: 90,  dmgUnit: 4,  dmgBuilding: 55, range: 5.5, aggro: 6,   speed: 1.2, cooldown: 2.6,
+               train: 16, siege: true, cost: { eisen: 1, holz: 2, bretter: 1, nahrung: 1 } },
   },
   SOLDIER_KEYS: ['lanze', 'schwert', 'bogen', 'reiter'],
+  SIEGE_KEYS: ['katapult'],
   /* Rückfall-Werte (Altstände / generische Nutzung). */
   SOLDIER: { hp: 60, dmgUnit: 10, dmgBuilding: 14, range: 1.1, aggro: 4, speed: 2.4, cooldown: 0.8 },
 

@@ -193,7 +193,7 @@ html, body {
 .bbtn.cant { opacity:0.42; }
 
 #infopanel {
-  position:absolute; left:8px; bottom:calc(96px + env(safe-area-inset-bottom));
+  position:absolute; left:8px; bottom:calc(136px + env(safe-area-inset-bottom));
   width:270px; max-width:76%;
   background:rgba(10,18,26,0.92); border:1px solid rgba(255,255,255,0.25);
   border-radius:12px; padding:12px;
@@ -215,7 +215,7 @@ html, body {
 
 #toast {
   position:absolute; left:50%; transform:translateX(-50%);
-  bottom:calc(104px + env(safe-area-inset-bottom));
+  bottom:calc(140px + env(safe-area-inset-bottom));
   background:rgba(10,18,26,0.92); border:1px solid #ffb84d;
   color:#ffd9a0; padding:8px 16px; border-radius:12px; font-size:0.9rem;
   max-width:86%; text-align:center;
@@ -243,6 +243,39 @@ html, body {
 #tribe-ind { font-size:1.2rem; padding:0 2px; flex:none; }
 
 .hudbtn.cant { opacity:0.45; }
+
+/* Kategorie-Reiter über der Bauleiste */
+#buildcats {
+  position:absolute; left:0; right:0;
+  bottom:calc(96px + env(safe-area-inset-bottom));
+  display:flex; gap:6px; overflow-x:auto;
+  padding:4px 8px;
+  background:rgba(10,18,26,0.7); backdrop-filter:blur(6px);
+}
+.catbtn {
+  flex:none; border:none; border-radius:9px;
+  background:rgba(255,255,255,0.09); color:#cfe3f5;
+  padding:6px 12px; font-size:0.82rem; cursor:pointer; white-space:nowrap;
+}
+.catbtn.on { background:#3b6d99; color:#fff; }
+
+/* Übersicht-Overlay */
+.ov-tabs { display:flex; gap:6px; margin-bottom:12px; }
+.ov-tabs button {
+  flex:1; border:none; border-radius:9px; cursor:pointer;
+  background:rgba(255,255,255,0.08); color:#cfe3f5; padding:8px; font-size:0.9rem;
+}
+.ov-tabs button.on { background:#3b6d99; color:#fff; }
+.ov-page { text-align:left; max-height:56vh; overflow-y:auto; }
+.ov-grp { margin-bottom:12px; }
+.ov-grp h4 { font-size:0.82rem; color:#9fb6c9; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+.ov-goods { display:flex; flex-wrap:wrap; gap:10px; }
+.ov-good { white-space:nowrap; font-size:1rem; }
+.ov-good b { color:#fff; margin-left:2px; }
+.ov-good.zero { opacity:0.4; }
+.dist-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.dist-name { font-size:0.85rem; }
+.dist-seg button { padding:5px 9px; font-size:0.72rem; }
 #daynight {
   position:absolute; right:8px; top:calc(196px + env(safe-area-inset-top));
   font-size:1.3rem; pointer-events:none;

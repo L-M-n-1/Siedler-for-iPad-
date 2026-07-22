@@ -4,7 +4,7 @@
 const SaveGame = (() => {
 
   const SLOTS = ['1', '2', '3', 'auto'];
-  const VERSION = 3;                 // + Bergvorkommen, Gold/Beförderung, Geologe
+  const VERSION = 4;                 // + Kategorien, Materialströme (Pause/Prio), neue Gebäude/Waren, Katapult
   const key = slot => 'ns-save-' + slot;
 
   /* Serialisierbaren Spielzustand erzeugen (Typed Arrays → normale Arrays).

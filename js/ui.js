@@ -19,6 +19,8 @@ const UI = (() => {
   let placing = null;          // Gebäudetyp im Platzierungsmodus
   let selected = [];           // ausgewählte Soldaten
   let geoMode = false;         // Geologe-Zielmodus
+  let ovOpen = false;          // Übersicht offen
+  let ovTab = 'bestand';
   let infoBuilding = null;
   let hudTimer = 0;
   let toastTimer = 0;
@@ -286,13 +288,27 @@ const UI = (() => {
     });
   }
 
+  let buildCat = 'rohstoff';
+
   function buildBuildBar() {
+    // Kategorie-Reiter
+    const tabs = $('buildcats');
+    tabs.innerHTML = '';
+    for (const c of CFG.BUILD_CATS) {
+      const t = document.createElement('button');
+      t.className = 'catbtn' + (c.id === buildCat ? ' on' : '');
+      t.innerHTML = `${c.icon} ${c.name}`;
+      t.onclick = () => { buildCat = c.id; buildBuildBar(); };
+      tabs.appendChild(t);
+    }
+    // Gebäude der aktiven Kategorie
     const bar = $('buildbar');
     bar.innerHTML = '';
     for (const type of CFG.BUILD_ORDER) {
+      if (CFG.BUILD_CAT[type] !== buildCat) continue;
       const def = CFG.BUILDINGS[type];
       const b = document.createElement('button');
-      b.className = 'bbtn';
+      b.className = 'bbtn' + (placing === type ? ' on' : '');
       b.id = 'bb-' + type;
       const cost = Object.entries(Game.tribeCost(0, type))
         .filter(([, n]) => n > 0)
@@ -347,6 +363,74 @@ const UI = (() => {
     toastTimer = 2.6;
   }
 
+  /* ------------------------------------------------ Übersicht & Verteilung */
+
+  function openOverview() { ovOpen = true; $('overview').classList.remove('hidden'); renderOverview(); }
+  function closeOverview() { ovOpen = false; $('overview').classList.add('hidden'); }
+
+  function switchOvTab(tab) {
+    ovTab = tab;
+    document.querySelectorAll('.ov-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    $('ov-bestand').classList.toggle('hidden', tab !== 'bestand');
+    $('ov-verteilung').classList.toggle('hidden', tab !== 'verteilung');
+    renderOverview();
+  }
+
+  function renderOverview() {
+    const st = Game.st; if (!st) return;
+    const p = st.players[0];
+    if (ovTab === 'bestand') {
+      let h = '';
+      for (const grp of CFG.RES_GROUPS) {
+        const items = CFG.RES.filter(r => CFG.RES_INFO[r].grp === grp.id);
+        h += `<div class="ov-grp"><h4>${grp.name}</h4><div class="ov-goods">`;
+        for (const r of items) {
+          const v = p.res[r] || 0;
+          h += `<span class="ov-good${v === 0 ? ' zero' : ''}" title="${CFG.RES_INFO[r].name}">${CFG.RES_INFO[r].icon}<b>${v}</b></span>`;
+        }
+        h += '</div></div>';
+      }
+      // Siedler
+      h += `<div class="ov-grp"><h4>Siedler</h4><div class="ov-goods">
+        <span class="ov-good" title="Soldaten / Wohnraum">👥<b>${Game.countPop(0)}/${Game.maxPop(0)}</b></span>
+        <span class="ov-good" title="Lastenträger unterwegs / verfügbar">🧺<b>${Game.carriersBusy(0)}/${Game.carrierCap(0)}</b></span>
+        <span class="ov-good" title="Geologen unterwegs">🔍<b>${Game.geologeActive(0)}</b></span>
+      </div></div>`;
+      // Militär
+      const byType = {};
+      for (const u of st.units) if (u.owner === 0) byType[u.type] = (byType[u.type] || 0) + 1;
+      let garr = 0;
+      for (const b of st.buildings) if (b.alive && b.owner === 0 && CFG.BUILDINGS[b.type].military) garr += b.garrison || 0;
+      h += `<div class="ov-grp"><h4>Truppen</h4><div class="ov-goods">`;
+      for (const t of CFG.SOLDIER_KEYS.concat(CFG.SIEGE_KEYS)) {
+        h += `<span class="ov-good${!byType[t] ? ' zero' : ''}" title="${CFG.SOLDIERS[t].name}">${CFG.SOLDIERS[t].icon}<b>${byType[t] || 0}</b></span>`;
+      }
+      h += `<span class="ov-good" title="in Türmen einquartiert">🛡️<b>${garr}</b></span></div></div>`;
+      $('ov-bestand').innerHTML = h;
+    } else {
+      // Verteilung: Priorität je produzierendem Gebäudetyp
+      const labels = ['Niedrig', 'Normal', 'Hoch'];
+      const types = CFG.BUILD_ORDER.filter(t => CFG.BUILDINGS[t].input || CFG.BUILDINGS[t].makesTool);
+      let h = '<p class="hint">Lege fest, welche Verbraucher knappe Waren (Kohle, Eisen, Holz, Getreide, Wasser) zuerst bekommen.</p>';
+      for (const t of types) {
+        const cur = p.typePrio[t] || 1;
+        h += `<div class="dist-row"><span class="dist-name">${CFG.BUILDINGS[t].icon} ${CFG.BUILDINGS[t].name}</span><span class="seg dist-seg" data-t="${t}">`;
+        for (let k = 0; k < 3; k++) h += `<button data-p="${k}"${k === cur ? ' class="on"' : ''}>${labels[k]}</button>`;
+        h += '</span></div>';
+      }
+      const page = $('ov-verteilung');
+      page.innerHTML = h;
+      page.querySelectorAll('.dist-seg').forEach(seg => {
+        seg.querySelectorAll('button').forEach(btn => {
+          btn.onclick = () => {
+            Game.setTypePrio(0, seg.dataset.t, +btn.dataset.p);
+            seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === btn));
+          };
+        });
+      });
+    }
+  }
+
   function updateHUD(force) {
     const st = Game.st;
     if (!st) return;
@@ -370,10 +454,12 @@ const UI = (() => {
     if (dn) dn.textContent = Render.night > 0.6 ? '🌙' : Render.night > 0.3 ? '🌆' : '☀️';
     $('btn-geologe').classList.toggle('cant', p.geoCd > 0);
 
-    // Baubare Gebäude hervorheben
+    // Baubare Gebäude hervorheben (nur die sichtbaren der aktiven Kategorie)
     for (const type of CFG.BUILD_ORDER) {
-      $('bb-' + type).classList.toggle('cant', !Game.canAfford(p, Game.tribeCost(0, type)));
+      const el = $('bb-' + type);
+      if (el) el.classList.toggle('cant', !Game.canAfford(p, Game.tribeCost(0, type)));
     }
+    if (ovOpen) renderOverview();
 
     selected = selected.filter(u => u.hp > 0);
 
@@ -435,11 +521,24 @@ const UI = (() => {
         [{ k: null, icon: '🎲', name: 'Auto' }].concat(CFG.TOOL_KEYS.map(t => ({ k: t, icon: CFG.RES_INFO[t].icon, name: CFG.RES_INFO[t].name }))),
         () => b.toolType, v => { b.toolType = v; }));
     }
-    // Kaserne: Soldatentyp wählen
+    // Kaserne/Belagerung: Einheitentyp wählen
     if (def.trains) {
+      const keys = def.siege ? CFG.SIEGE_KEYS : CFG.SOLDIER_KEYS;
       body.appendChild(makeChooser('Ausbildung',
-        CFG.SOLDIER_KEYS.map(t => ({ k: t, icon: CFG.SOLDIERS[t].icon, name: CFG.SOLDIERS[t].short })),
-        () => b.trainType || 'lanze', v => { b.trainType = v; }));
+        keys.map(t => ({ k: t, icon: CFG.SOLDIERS[t].icon, name: CFG.SOLDIERS[t].short })),
+        () => keys.includes(b.trainType) ? b.trainType : keys[0], v => { b.trainType = v; }));
+    }
+    // Produktionsgebäude: Priorität + Pause (Materialströme steuern)
+    if (def.interval || def.trains || def.makesTool) {
+      body.appendChild(makeChooser('Priorität',
+        [{ k: 0, icon: '▽', name: 'Niedrig' }, { k: 1, icon: '◇', name: 'Normal' }, { k: 2, icon: '△', name: 'Hoch' }],
+        () => b.prio ?? 1, v => { b.prio = v; }));
+      const pz = document.createElement('button');
+      pz.className = 'btn small';
+      pz.id = 'info-pause';
+      pz.textContent = b.paused ? '▶ Fortsetzen' : '⏸ Pausieren';
+      pz.onclick = () => { b.paused = !b.paused; pz.textContent = b.paused ? '▶ Fortsetzen' : '⏸ Pausieren'; updateInfoDyn(b); };
+      body.appendChild(pz);
     }
     // Turm: Besatzung ausrücken lassen
     if (def.military) {
@@ -532,6 +631,9 @@ const UI = (() => {
       quitToMenu();
     };
     $('btn-end-menu').onclick = quitToMenu;
+    $('btn-overview').onclick = () => { ovOpen ? closeOverview() : openOverview(); };
+    $('btn-ov-close').onclick = closeOverview;
+    document.querySelectorAll('.ov-tabs button').forEach(b => { b.onclick = () => switchOvTab(b.dataset.tab); });
     $('btn-info-close').onclick = hideInfo;
     $('btn-demolish').onclick = () => {
       if (infoBuilding && infoBuilding.owner === 0) {
