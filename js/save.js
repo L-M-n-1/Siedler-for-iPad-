@@ -4,7 +4,7 @@
 const SaveGame = (() => {
 
   const SLOTS = ['1', '2', '3', 'auto'];
-  const VERSION = 4;                 // + Kategorien, Materialströme (Pause/Prio), neue Gebäude/Waren, Katapult
+  const VERSION = 5;                 // + Hafen/Schiffe, Tempel/Lazarett, Wohnhaus-Stufen, Kaserne-Warteschlange
   const key = slot => 'ns-save-' + slot;
 
   /* Serialisierbaren Spielzustand erzeugen (Typed Arrays → normale Arrays).
@@ -30,6 +30,7 @@ const SaveGame = (() => {
       found: Array.from(st.found),
       time: st.time, nextId: st.nextId, over: st.over,
       players, buildings, units: st.units,
+      ships: st.ships.map(s => ({ ...s, path: null })),   // Fahrten nach Laden neu planen
     };
   }
 

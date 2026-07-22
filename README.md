@@ -81,8 +81,11 @@ Zerstöre alle gegnerischen Hauptquartiere, bevor deins fällt!
 | Werkzeuge | 🛠️ Werkzeugmacher (Eisen + Kohle → Axt, Säge, Spitzhacke, Sense, Angel, Hammer) |
 | Gold | 🔍 Geologe findet Goldvorkommen → 🟡 Goldmine (Golderz) → 🪙 Goldschmiede (Gold) |
 | Waffen | 🗡️ Schwertschmiede (Eisen+Kohle) · 🔱 Lanzenschmiede (Eisen+Holz) · 🏹 Bogenmacher (Holz) · 🐎 Gestüt (Getreide→Pferd) |
-| Militär | 🛡️ Kaserne bildet je nach Waffe Soldaten aus · ⚙️ Belagerungswerkstatt baut Katapulte · 🏠 Wohnhaus (mehr Soldatenplätze) |
-| Logistik | 📦 Lagerhaus · 🏪 Markt – erhöhen die Zahl der Lastenträger und nehmen Waren an |
+| Militär | 🛡️ Kaserne bildet je nach Waffe Soldaten aus · ⚙️ Belagerungswerkstatt baut Katapulte |
+| Wohnraum | 🛖 Hütte (2) · 🏠 Wohnhaus (4) · 🏡 Gutshaus (8) – Soldatenplätze in drei Größen |
+| Unterstützung | ⛪ Tempel (schnellere Beförderung + Moral) · ⛑️ Lazarett (heilt Soldaten) |
+| Logistik | 📦 Lagerhaus · 🏪 Markt – mehr Lastenträger und Warenannahme |
+| See | ⚓ Hafen an der Küste baut 🚣 Fischerboote (Nahrung) und ⛵ Transportschiffe (Truppen übers Wasser) |
 | Gebiet | 🚩 Wachposten · 🗼 Wachturm · 🏯 Festung – erweitern das Gebiet, sobald sie besetzt sind |
 
 Der **Katapult** (aus der Belagerungswerkstatt) ist langsam, aber verheerend gegen Gebäude und
@@ -90,8 +93,9 @@ Festungen – ideal, um gegnerische Bollwerke aus der Distanz zu knacken.
 
 ### Geologe & Gold
 
-Berge verbergen **Vorkommen** (Stein, Eisen, Kohle, Gold). Schick mit dem **🔍-Knopf** einen
-**Geologen** zu einem Berg – er erkundet die Umgebung und markiert Fundstellen mit Schildern.
+Jedes Gebirge enthält **Stein, Eisen und Kohle** gemischt; **Gold** ist selten und liegt in
+kleinen Adern. Schick mit dem **🔍-Knopf** einen **Geologen** zu einem Berg – er erkundet die
+Umgebung und markiert Fundstellen mit Schildern.
 Eine **Goldmine** kann nur auf einem gefundenen **Goldvorkommen** gebaut werden; gefundene
 reiche Vorkommen steigern außerdem den Ertrag der normalen Minen. Die **Goldschmiede** macht aus
 Golderz und Kohle **Goldmünzen**. Gold **befördert** deine Soldaten automatisch in höhere Ränge
@@ -123,8 +127,23 @@ Lagerhaus) getragen; erst dort landen sie im Vorrat. Die Zahl der Träger ist be
 | 🏹 Bogenschütze | Bogen | greift aus Distanz an, wenig Panzerung |
 | 🐎 Reiter | Schwert + Pferd | schnell und schlagkräftig, teuer |
 
-Den Ausbildungstyp stellst du im Info-Panel der **Kaserne** ein. Die Kaserne verbraucht die
+In der **Kaserne** (bzw. Belagerungswerkstatt/Hafen) reihst du im Info-Panel gezielt **Typ und
+Anzahl** in eine **Warteschlange** ein – auch mehrere verschiedene Typen nacheinander. Die
+Restmengen werden angezeigt und lassen sich einzeln entfernen. Die Kaserne verbraucht die
 passende Waffe (Reiter zusätzlich ein Pferd) plus Nahrung und braucht freien Wohnraum.
+
+### Schiffe & Hafen
+
+Ein **Hafen** an der Küste baut zwei Schiffstypen: **Fischerboote** fahren automatisch aufs Wasser
+und liefern Nahrung, **Transportschiffe** bringen Soldaten über Seen und Flüsse. Zum Übersetzen:
+Soldaten auswählen und das eigene Transportschiff antippen (sie schiffen ein), dann das Schiff
+auswählen und eine Küste am anderen Ufer antippen – dort schiffen die Soldaten wieder aus.
+
+### Krieger-Ränge & Tempel/Lazarett
+
+Mit **Gold** steigen deine Soldaten in **drei Rängen** (Rekrut → Veteran → Elite) an Leben und
+Schaden. Ein **Tempel** beschleunigt diese Beförderung und stärkt Truppen in der Nähe (Moral).
+Ein **Lazarett** heilt verwundete Soldaten in seinem Umkreis mit der Zeit.
 
 ### Türme & Gebiet (Besatzung nötig)
 

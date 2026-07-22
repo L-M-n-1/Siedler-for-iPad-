@@ -284,6 +284,11 @@ const Render = (() => {
     markt:      { w: 1.5,  h: 1.35 },
     belagerung: { w: 1.35, h: 1.6 },
     brauerei:   { w: 1.2,  h: 1.6 },
+    hafen:      { w: 1.55, h: 1.5 },
+    tempel:     { w: 1.35, h: 2.1 },
+    lazarett:   { w: 1.25, h: 1.55 },
+    huette:     { w: 0.9,  h: 1.25 },
+    gutshaus:   { w: 1.45, h: 1.8 },
     default:    { w: 1.1,  h: 1.55 },
   };
   const isTowerSprite = t => t === 'wachturm' || t === 'wachposten';
@@ -722,6 +727,7 @@ const Render = (() => {
     ctx.drawImage(terrC, 0, 0);
 
     drawWaterGlints(W, H);
+    drawShips();
     drawBorderStones(W, H);
     drawGroundShadows(W, H);
     drawScene();
@@ -905,6 +911,47 @@ const Render = (() => {
     }
   }
 
+  /* Schiffe auf dem Wasser (Rumpf, Mast/Segel, Wimpel, Kielwellen). */
+  function drawShips() {
+    const st = Game.st;
+    if (!st.ships) return;
+    const t = st.time;
+    for (const s of st.ships) {
+      const px = s.x * TS, py = s.y * TS;
+      const transp = s.type === 'transporter';
+      const bob = Math.sin(t * 2 + s.id) * 1.2;
+      // Kielwellen
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(px, py + 5, 7, 0.2, Math.PI - 0.2); ctx.stroke();
+      // Rumpf
+      ctx.fillStyle = '#6b4a2c';
+      ctx.beginPath();
+      ctx.moveTo(px - 9, py + bob); ctx.quadraticCurveTo(px, py + 6 + bob, px + 9, py + bob);
+      ctx.lineTo(px + 6, py - 3 + bob); ctx.lineTo(px - 6, py - 3 + bob); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8a6741';
+      ctx.fillRect(px - 7, py - 3 + bob, 14, 1.6);
+      // Mast + Segel
+      ctx.strokeStyle = '#4a3420'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(px, py - 3 + bob); ctx.lineTo(px, py - 16 + bob); ctx.stroke();
+      ctx.fillStyle = transp ? '#e8e2d2' : '#cfe0ea';
+      ctx.beginPath();
+      ctx.moveTo(px, py - 15 + bob); ctx.quadraticCurveTo(px + 9, py - 11 + bob, px + 1, py - 5 + bob); ctx.closePath(); ctx.fill();
+      // Wimpel in Spielerfarbe
+      ctx.fillStyle = CFG.COLORS[s.owner];
+      ctx.beginPath(); ctx.moveTo(px, py - 16 + bob); ctx.lineTo(px + 6, py - 15 + bob); ctx.lineTo(px, py - 13 + bob); ctx.closePath(); ctx.fill();
+      // Fracht-Anzeige beim Transporter
+      if (transp && s.cargo && s.cargo.length) {
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⚔' + s.cargo.length, px, py - 1 + bob);
+      }
+      // Auswahlring
+      if (UI.selectedShip && UI.selectedShip.id === s.id) {
+        ctx.strokeStyle = '#ffd27f'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(px, py + 2, 12, 6, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+  }
+
   function drawCarrier(c) {
     const px = c.x * TS, py = c.y * TS;
     // Lauf-Wippen aus zurückgelegter Strecke
@@ -1045,6 +1092,20 @@ const Render = (() => {
     if (b.type === 'brunnen') {
       ctx.fillStyle = `rgba(120,180,255,${(0.4 + 0.2 * Math.sin(t * 2 + b.id)).toFixed(2)})`;
       ctx.beginPath(); ctx.arc(x + spr.w * 0.5, y + spr.h * 0.72, 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+    // Lazarett: pulsierendes rotes Kreuz
+    if (b.type === 'lazarett') {
+      const a = 0.55 + 0.35 * Math.sin(t * 3 + b.id);
+      ctx.fillStyle = `rgba(220,60,60,${a.toFixed(2)})`;
+      const kx = x + spr.w * 0.5, ky = y + spr.h * 0.34;
+      ctx.fillRect(kx - 1.4, ky - 4, 2.8, 8); ctx.fillRect(kx - 4, ky - 1.4, 8, 2.8);
+    }
+    // Tempel: warmer Lichtschein
+    if (b.type === 'tempel') {
+      const a = 0.3 + 0.2 * Math.sin(t * 1.5 + b.id);
+      const gr = ctx.createRadialGradient(x + spr.w * 0.5, y + spr.h * 0.2, 1, x + spr.w * 0.5, y + spr.h * 0.2, 12);
+      gr.addColorStop(0, `rgba(255,235,150,${a.toFixed(2)})`); gr.addColorStop(1, 'rgba(255,235,150,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x + spr.w * 0.5, y + spr.h * 0.2, 12, 0, Math.PI * 2); ctx.fill();
     }
     // Turmschuss auf Ziel
     if (b.firing) {

@@ -22,11 +22,12 @@ const AI = (() => {
     ['fischer', 1], ['brauerei', 1], ['schwertschmiede', 1], ['wohnhaus', 2], ['wachturm', 1],
     ['bogenmacher', 1], ['lagerhaus', 1], ['schweinefarm', 1], ['metzgerei', 1],
     ['holzfaeller', 3], ['saegewerk', 2], ['eisenmine', 2], ['schmelze', 2],
-    ['gestuet', 1], ['kaserne', 2], ['markt', 1], ['goldmine', 1], ['goldschmiede', 1],
-    ['wachturm', 2], ['wohnhaus', 3], ['werkzeugmacher', 2], ['schwertschmiede', 2],
+    ['gestuet', 1], ['kaserne', 2], ['markt', 1], ['hafen', 1], ['goldmine', 1], ['goldschmiede', 1],
+    ['tempel', 1], ['lazarett', 1],
+    ['wachturm', 2], ['gutshaus', 1], ['werkzeugmacher', 2], ['schwertschmiede', 2],
     ['steinbruch', 2], ['bauernhof', 2], ['muehle', 2], ['baeckerei', 2], ['brunnen', 2],
-    ['wohnhaus', 4], ['festung', 1], ['belagerung', 1], ['wachturm', 3], ['kaserne', 3],
-    ['speermacher', 2], ['goldmine', 2], ['goldschmiede', 2], ['wohnhaus', 5], ['wachturm', 4],
+    ['gutshaus', 2], ['festung', 1], ['belagerung', 1], ['wachturm', 3], ['kaserne', 3],
+    ['speermacher', 2], ['goldmine', 2], ['goldschmiede', 2], ['gutshaus', 3], ['wachturm', 4],
   ];
 
   function update(p, dt) {

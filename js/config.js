@@ -47,9 +47,9 @@ const CFG = {
 
   /* Startvorräte inkl. Starter-Werkzeugen, damit die erste Bauwelle nicht blockiert. */
   START_RES: {
-    holz: 14, bretter: 16, stein: 12, getreide: 0, mehl: 0, nahrung: 10, wasser: 0, schwein: 0, bier: 0,
-    erz: 0, kohle: 4, eisen: 2, golderz: 0, gold: 0,
-    axt: 2, saege: 2, hacke: 3, sense: 2, angel: 1, hammer: 3,
+    holz: 14, bretter: 18, stein: 14, getreide: 0, mehl: 0, nahrung: 10, wasser: 0, schwein: 0, bier: 0,
+    erz: 2, kohle: 6, eisen: 4, golderz: 0, gold: 0,
+    axt: 3, saege: 2, hacke: 3, sense: 2, angel: 1, hammer: 6,
     schwert: 0, lanze: 2, bogen: 0, pferd: 0,
   },
   POP_BASE: 6,                  // Wohnraum durch das Hauptquartier
@@ -201,9 +201,24 @@ const CFG = {
     markt:       { name: 'Markt', icon: '🏪', hp: 200, cost: { bretter: 4, stein: 2 }, buildTime: 13,
                    storage: true, carriers: 6,
                    desc: 'Großer Umschlagplatz: viele Lastenträger (+6) und Verteil-Knotenpunkt.' },
+    huette:      { name: 'Hütte', icon: '🛖', hp: 90, cost: { bretter: 2 }, buildTime: 6,
+                   pop: 2,
+                   desc: 'Einfache Unterkunft für 2 Soldaten – billig und schnell gebaut.' },
     wohnhaus:    { name: 'Wohnhaus', icon: '🏠', hp: 150, cost: { bretter: 3, stein: 2 }, buildTime: 10,
                    pop: 4,
                    desc: 'Bietet Wohnraum für 4 weitere Soldaten.' },
+    gutshaus:    { name: 'Gutshaus', icon: '🏡', hp: 240, cost: { bretter: 5, stein: 5 }, buildTime: 16,
+                   pop: 8,
+                   desc: 'Großes Anwesen mit Wohnraum für 8 Soldaten.' },
+    hafen:       { name: 'Hafen', icon: '⚓', hp: 280, cost: { bretter: 6, stein: 4 }, buildTime: 18,
+                   buildsShips: true, storage: true, carriers: 2, terrainNeed: { t: 1, r: 2 },
+                   desc: 'An der Küste. Baut Fischerboote (Nahrung) und Transportschiffe für Truppen übers Wasser.' },
+    tempel:      { name: 'Tempel', icon: '⛪', hp: 260, cost: { bretter: 4, stein: 6 }, buildTime: 18,
+                   temple: true,
+                   desc: 'Beschleunigt die Beförderung deiner Soldaten und stärkt Truppen in der Nähe (Moral).' },
+    lazarett:    { name: 'Lazarett', icon: '⛑️', hp: 200, cost: { bretter: 4, stein: 3 }, buildTime: 14,
+                   hospital: true,
+                   desc: 'Heilt verwundete Soldaten in der Umgebung mit der Zeit.' },
 
     wachposten:  { name: 'Wachposten', icon: '🚩', hp: 200, cost: { bretter: 1, stein: 2 }, buildTime: 8,
                    claim: 4, military: true, garrisonMax: 1,
@@ -240,7 +255,9 @@ const CFG = {
     schwertschmiede: 'militaer', speermacher: 'militaer', bogenmacher: 'militaer',
     gestuet: 'militaer', kaserne: 'militaer', belagerung: 'militaer',
     wachposten: 'militaer', wachturm: 'militaer', festung: 'militaer',
-    lagerhaus: 'logistik', markt: 'logistik', wohnhaus: 'logistik',
+    tempel: 'militaer', lazarett: 'militaer',
+    lagerhaus: 'logistik', markt: 'logistik', hafen: 'logistik',
+    huette: 'logistik', wohnhaus: 'logistik', gutshaus: 'logistik',
   },
   /* Schlüsselwaren, deren Verteilung im Verteilungsmenü einstellbar ist. */
   DIST_GOODS: ['kohle', 'eisen', 'holz', 'getreide', 'wasser'],
@@ -251,11 +268,24 @@ const CFG = {
                 'kohlemine', 'eisenmine', 'schmelze', 'werkzeugmacher',
                 'schwertschmiede', 'speermacher', 'bogenmacher', 'gestuet',
                 'goldmine', 'goldschmiede',
-                'lagerhaus', 'markt', 'wohnhaus', 'wachposten', 'wachturm', 'festung', 'kaserne', 'belagerung'],
+                'lagerhaus', 'markt', 'hafen', 'huette', 'wohnhaus', 'gutshaus',
+                'wachposten', 'wachturm', 'festung', 'kaserne', 'belagerung', 'tempel', 'lazarett'],
 
   MILITARY: ['wachposten', 'wachturm', 'festung'],
   MINES: ['steinbruch', 'kohlemine', 'eisenmine', 'goldmine'],
   BEER_BONUS: 0.75,             // Minen-Intervall-Faktor bei vorrätigem Bier (schneller)
+  TEMPLE: { radius: 7, moral: 1.15, promoteMult: 0.6 },   // Kampfbonus + schnellere Beförderung
+  LAZARETT: { radius: 6, healPerSec: 3 },                 // HP-Regeneration im Umkreis
+
+  /* Schiffe (vom Hafen gebaut). fischer: automatischer Nahrungs-Boost;
+     transporter: trägt Soldaten über Wasser. */
+  SHIPS: {
+    fischer:     { name: 'Fischerboot', short: 'Fischer', icon: '🚣', hp: 40, speed: 1.8,
+                   interval: 6, food: 2, cost: { bretter: 3 }, build: 8 },
+    transporter: { name: 'Transportschiff', short: 'Transport', icon: '⛵', hp: 90, speed: 2.0,
+                   capacity: 6, cost: { bretter: 5, stein: 1 }, build: 12 },
+  },
+  SHIP_KEYS: ['fischer', 'transporter'],
 
   /* Soldatentypen: eigene Werte und Ausbildungskosten (Waffe + Nahrung, ggf. Pferd). */
   SOLDIERS: {

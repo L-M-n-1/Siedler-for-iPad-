@@ -17,13 +17,13 @@ const Game = (() => {
       terrain: map.terrain, trees: map.trees,
       deposit: map.deposit, found: new Uint8Array(map.w * map.h),
       owner: new Int8Array(map.w * map.h).fill(-1),
-      buildings: [], units: [], carriers: [],
+      buildings: [], units: [], carriers: [], ships: [],
       players: [],
       time: 0, speed: 1, over: null,
       nextId: 1,
       dirty: new Set(),          // Kacheln, die neu gezeichnet werden müssen
       territoryDirty: true,
-      regrowTimer: 0, towerTimer: 0, promoteTimer: 0,
+      regrowTimer: 0, towerTimer: 0, promoteTimer: 0, healTimer: 0,
       toast: null,
     };
 
@@ -58,12 +58,12 @@ const Game = (() => {
       deposit: Int8Array.from(s.deposit),
       found: Uint8Array.from(s.found),
       owner: new Int8Array(s.w * s.h).fill(-1),
-      buildings: s.buildings, units: s.units, carriers: [],
+      buildings: s.buildings, units: s.units, carriers: [], ships: s.ships || [],
       players: s.players.map(p => ({ ...p, geoCd: p.geoCd || 0, typePrio: p.typePrio || {}, ai: p.human ? null : (p.ai || AI.newMemory()) })),
       time: s.time, speed: 1, over: s.over || null,
       nextId: s.nextId,
       dirty: new Set(), territoryDirty: true,
-      regrowTimer: 0, towerTimer: 0, promoteTimer: 0, toast: null,
+      regrowTimer: 0, towerTimer: 0, promoteTimer: 0, healTimer: 0, toast: null,
     };
     // In-Flight-Lieferungen wurden beim Speichern dem Pool gutgeschrieben → Träger neu starten
     for (const b of st.buildings) { b.hasCarrier = false; }
@@ -195,7 +195,7 @@ const Game = (() => {
       staffed: !needsTool(type),     // Werkzeug-Gebäude erst nach Besetzung tätig
       out: {}, hasCarrier: false,     // Ausgangslager + laufende Lieferung
       garrison: 0, gtypes: [],        // Turm-Besatzung (Anzahl + Typen)
-      toolType: null, trainType: def.siege ? 'katapult' : 'lanze',
+      toolType: null, trainType: def.siege ? 'katapult' : 'lanze', queue: [],
       paused: false, prio: (st.players[pid].typePrio && st.players[pid].typePrio[type]) || 1,
     };
     st.buildings.push(b);
@@ -234,6 +234,7 @@ const Game = (() => {
     for (const b of st.buildings) if (b.owner === p.id) { b.alive = false; st.dirty.add(idx(b.x, b.y)); }
     st.units = st.units.filter(u => u.owner !== p.id);
     st.carriers = st.carriers.filter(c => c.owner !== p.id);
+    st.ships = st.ships.filter(s => s.owner !== p.id);
     recomputeTerritory();
     st.territoryDirty = true;   // Anzeige neu zeichnen
     st.toast = { text: `${p.name} wurde${p.human ? 'st' : ''} besiegt!`, t: 5 };
@@ -274,11 +275,15 @@ const Game = (() => {
 
   /* ------------------------------------------------ Wegfindung (A*) */
 
-  function astar(sx, sy, tx, ty) {
+  const isWater = i => st.terrain[i] === CFG.T.WATER;
+
+  /* A* mit optionalem Passierbarkeits-Prädikat (Default: Land). */
+  function astar(sx, sy, tx, ty, pass, nearFn) {
     const { w, h } = st;
+    pass = pass || walkable;
     if (!inB(tx, ty)) return null;
-    if (!walkable(idx(tx, ty))) {
-      const alt = nearestWalkable(tx, ty, 3);
+    if (!pass(idx(tx, ty))) {
+      const alt = (nearFn || nearestWalkable)(tx, ty, 3);
       if (!alt) return null;
       tx = alt.x; ty = alt.y;
     }
@@ -331,7 +336,7 @@ const Game = (() => {
         const nx = cx + dx, ny = cy + dy;
         if (!inB(nx, ny)) continue;
         const ni = ny * w + nx;
-        if (!walkable(ni) || closed[ni]) continue;
+        if (!pass(ni) || closed[ni]) continue;
         const ng = g[cur] + c;
         if (ng < g[ni]) { g[ni] = ng; from[ni] = cur; push(ng + hFn(ni), ni); }
       }
@@ -354,6 +359,20 @@ const Game = (() => {
     }
     return null;
   }
+
+  function nearestWater(tx, ty, r) {
+    for (let rad = 0; rad <= r; rad++) {
+      for (let dy = -rad; dy <= rad; dy++) {
+        for (let dx = -rad; dx <= rad; dx++) {
+          const nx = tx + dx, ny = ty + dy;
+          if (inB(nx, ny) && isWater(idx(nx, ny))) return { x: nx, y: ny };
+        }
+      }
+    }
+    return null;
+  }
+
+  const waterAstar = (sx, sy, tx, ty) => astar(sx, sy, tx, ty, isWater, nearestWater);
 
   /* ------------------------------------------------ Soldaten */
 
@@ -384,6 +403,117 @@ const Game = (() => {
       path: null, pi: 0, tb: null, tu: null, tgGar: null,
       cd: 0, scan: Math.random() * 0.5,
     });
+  }
+
+  /* ------------------------------------------------ Schiffe */
+
+  function spawnShip(pid, x, y, type, harborId) {
+    const S = CFG.SHIPS[type];
+    st.ships.push({
+      id: st.nextId++, owner: pid, type, home: harborId,
+      x: x + 0.5, y: y + 0.5, hp: S.hp, maxHp: S.hp,
+      path: null, pi: 0, cargo: [], timer: S.interval || 0,
+      roamT: Math.random() * 2, unloadAt: null,
+    });
+  }
+
+  function shipAt(wx, wy) {
+    let best = null, bestD = 1.4;
+    for (const s of st.ships) {
+      const d = Math.hypot(s.x - wx, s.y - wy);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    return best;
+  }
+
+  /* Schiff zu Wasser-/Küstenziel schicken; mit Fracht an Land = ausschiffen. */
+  function commandShip(s, tx, ty) {
+    const ti = idx(Math.floor(tx), Math.floor(ty));
+    if (inB(Math.floor(tx), Math.floor(ty)) && isWater(ti)) {
+      s.path = waterAstar(Math.floor(s.x), Math.floor(s.y), Math.floor(tx), Math.floor(ty));
+      s.pi = 0; s.unloadAt = null;
+    } else {
+      // Küste: bis ans Ufer fahren und Fracht ausschiffen
+      const wp = nearestWater(Math.floor(tx), Math.floor(ty), 4);
+      if (!wp) return false;
+      s.path = waterAstar(Math.floor(s.x), Math.floor(s.y), wp.x, wp.y);
+      s.pi = 0;
+      s.unloadAt = { x: Math.floor(tx), y: Math.floor(ty) };
+    }
+    return true;
+  }
+
+  /* Ausgewählte Soldaten sollen auf ein eigenes Transportschiff aufsteigen. */
+  function boardUnits(units, s) {
+    if (s.type !== 'transporter') return false;
+    let n = 0;
+    for (const u of units) {
+      if (u.owner !== s.owner) continue;
+      if (s.cargo.length + n >= CFG.SHIPS.transporter.capacity) break;
+      u.board = s.id; u.tb = null; u.tu = null; u.tgGar = null;
+      // ans Ufer nahe dem Schiff laufen
+      const land = nearestWalkable(Math.floor(s.x), Math.floor(s.y), 4);
+      if (land) { u.path = astar(Math.floor(u.x), Math.floor(u.y), land.x, land.y); u.pi = 0; }
+      n++;
+    }
+    return n > 0;
+  }
+
+  function updateShips(dt) {
+    for (const s of st.ships) {
+      const S = CFG.SHIPS[s.type];
+      if (s.path) {
+        if (followWater(s, dt)) {          // Ziel erreicht
+          if (s.unloadAt) { disembark(s); s.unloadAt = null; }
+        }
+      } else if (s.type === 'fischer') {
+        s.roamT -= dt;
+        if (s.roamT <= 0) { roamFisher(s); s.roamT = 3 + Math.random() * 3; }
+        s.timer -= dt;
+        if (s.timer <= 0) {
+          s.timer = S.interval;
+          const p = st.players[s.owner];
+          if (p && !p.defeated) p.res.nahrung += S.food;   // Fischfang
+        }
+      }
+    }
+    st.ships = st.ships.filter(s => s.hp > 0 && !s.removed);
+  }
+
+  function followWater(s, dt) {
+    const wp = s.path[s.pi];
+    if (!wp) { s.path = null; return true; }
+    const d = Math.hypot(wp.x - s.x, wp.y - s.y);
+    const step = CFG.SHIPS[s.type].speed * dt;
+    if (d <= step) { s.x = wp.x; s.y = wp.y; s.pi++; if (s.pi >= s.path.length) { s.path = null; return true; } }
+    else { s.x += (wp.x - s.x) / d * step; s.y += (wp.y - s.y) / d * step; }
+    return false;
+  }
+
+  function roamFisher(s) {
+    // kleines Ziel in Wassernähe
+    const harbor = getBuilding(s.home);
+    const cx = harbor ? harbor.x : Math.floor(s.x), cy = harbor ? harbor.y : Math.floor(s.y);
+    for (let tries = 0; tries < 8; tries++) {
+      const rx = cx + ((Math.random() * 12) | 0) - 6, ry = cy + ((Math.random() * 12) | 0) - 6;
+      if (inB(rx, ry) && isWater(idx(rx, ry))) {
+        s.path = waterAstar(Math.floor(s.x), Math.floor(s.y), rx, ry); s.pi = 0;
+        if (s.path) return;
+      }
+    }
+  }
+
+  function disembark(s) {
+    for (const u of s.cargo) {
+      const land = nearestWalkable(s.unloadAt.x, s.unloadAt.y, 5) || nearestWalkable(Math.floor(s.x), Math.floor(s.y), 5);
+      if (!land) continue;
+      u.x = land.x + 0.5; u.y = land.y + 0.5;
+      u.removed = false; u.board = null; u.path = null; u.tb = null; u.tu = null;
+      // ans Ziel weiterlaufen
+      u.path = astar(land.x, land.y, s.unloadAt.x, s.unloadAt.y); u.pi = 0;
+      st.units.push(u);
+    }
+    s.cargo = [];
   }
 
   function isEnemy(a, b) {
@@ -452,8 +582,10 @@ const Game = (() => {
 
     updateCarriers(dt);
     updateUnits(dt);
+    updateShips(dt);
     towerDefense(dt);
     promoteSoldiers(dt);
+    healAura(dt);
 
     for (const p of st.players) if (p.geoCd > 0) p.geoCd -= dt;
 
@@ -464,29 +596,71 @@ const Game = (() => {
     }
   }
 
-  /* Goldmünzen befördern Soldaten in höhere Ränge (mehr Leben/Schaden). */
+  function hasBuildingType(pid, type) {
+    return st.buildings.some(b => b.alive && b.done && b.owner === pid && b.type === type);
+  }
+
+  function buildingsOfType(pid, type) {
+    return st.buildings.filter(b => b.alive && b.done && b.owner === pid && b.type === type);
+  }
+
+  /* Goldmünzen befördern Soldaten (3 Stufen). Ein Tempel verdoppelt die Rate. */
   function promoteSoldiers(dt) {
     st.promoteTimer -= dt;
     if (st.promoteTimer > 0) return;
     st.promoteTimer = CFG.PROMOTE_CD;
     const maxRank = CFG.RANKS.length - 1;
     for (const p of st.players) {
-      if (p.defeated || (p.res.gold || 0) < CFG.PROMOTE_COST) continue;
-      let target = null;
-      for (const u of st.units) {
-        if (u.owner !== p.id || (u.rank || 0) >= maxRank) continue;
-        if (!target || (u.rank || 0) < (target.rank || 0)) target = u;
+      if (p.defeated) continue;
+      const perTick = hasBuildingType(p.id, 'tempel') ? 2 : 1;   // Tempel: schneller
+      for (let k = 0; k < perTick; k++) {
+        if ((p.res.gold || 0) < CFG.PROMOTE_COST) break;
+        let target = null;
+        for (const u of st.units) {
+          if (u.owner !== p.id || (u.rank || 0) >= maxRank) continue;
+          if (!target || (u.rank || 0) < (target.rank || 0)) target = u;
+        }
+        if (!target) break;
+        p.res.gold -= CFG.PROMOTE_COST;
+        const oldM = CFG.RANKS[target.rank || 0].mult;
+        target.rank = (target.rank || 0) + 1;
+        const f = CFG.RANKS[target.rank].mult / oldM;
+        target.maxHp = Math.round(target.maxHp * f);
+        target.hp = Math.round(target.hp * f);
+        target.dmgU *= f; target.dmgB *= f;
+        if (p.human) st.toast = { text: `🎖️ Soldat zum ${CFG.RANKS[target.rank].name} befördert!`, t: 3 };
       }
-      if (!target) continue;
-      p.res.gold -= CFG.PROMOTE_COST;
-      const oldM = CFG.RANKS[target.rank || 0].mult;
-      target.rank = (target.rank || 0) + 1;
-      const f = CFG.RANKS[target.rank].mult / oldM;
-      target.maxHp = Math.round(target.maxHp * f);
-      target.hp = Math.round(target.hp * f);
-      target.dmgU *= f; target.dmgB *= f;
-      if (p.human) st.toast = { text: `🎖️ Soldat zum ${CFG.RANKS[target.rank].name} befördert!`, t: 3 };
     }
+  }
+
+  /* Lazarett: verwundete eigene Einheiten im Umkreis regenerieren HP. */
+  function healAura(dt) {
+    st.healTimer -= dt;
+    if (st.healTimer > 0) return;
+    const step = 0.5;
+    st.healTimer = step;
+    const laz = st.buildings.filter(b => b.alive && b.done && CFG.BUILDINGS[b.type].hospital);
+    if (!laz.length) return;
+    const R = CFG.LAZARETT.radius, heal = CFG.LAZARETT.healPerSec * step;
+    for (const u of st.units) {
+      if (u.hp >= u.maxHp) continue;
+      for (const b of laz) {
+        if (b.owner !== u.owner) continue;
+        if (Math.hypot(b.x + 0.5 - u.x, b.y + 0.5 - u.y) <= R) {
+          u.hp = Math.min(u.maxHp, u.hp + heal);
+          break;
+        }
+      }
+    }
+  }
+
+  /* Moral: Einheit nahe eigenem Tempel → Schadensbonus. */
+  function moralOf(u) {
+    for (const b of st.buildings) {
+      if (!b.alive || !b.done || b.owner !== u.owner || b.type !== 'tempel') continue;
+      if (Math.hypot(b.x + 0.5 - u.x, b.y + 0.5 - u.y) <= CFG.TEMPLE.radius) return CFG.TEMPLE.moral;
+    }
+    return 1;
   }
 
   /* ------------------------------------------------ Lastenträger / Logistik */
@@ -661,6 +835,7 @@ const Game = (() => {
 
     if (b.paused) { b.working = false; b.status = 'Pausiert'; return; }
     if (def.trains) { trainAtBarracks(b, dt, def, p); return; }
+    if (def.buildsShips) { buildAtHarbor(b, dt, def, p); return; }
     if (!def.interval) return;   // Lager, Wohnhaus, Militär: keine Produktion
 
     b.timer -= dt * p.prodMult;
@@ -729,17 +904,36 @@ const Game = (() => {
     return CFG.TOOL_KEYS[b.toolRR];
   }
 
-  /* Kaserne bildet den eingestellten Soldatentyp aus (Waffe + Nahrung + Wohnraum). */
+  /* Nächster Bau-Typ: erst Warteschlange (Typ+Anzahl), sonst Dauer-Typ (KI/Fallback). */
+  function nextQueued(b, fallback) {
+    if (b.queue && b.queue.length) {
+      const e = b.queue[0];
+      return { type: e.type, fromQueue: true };
+    }
+    return fallback ? { type: fallback, fromQueue: false } : null;
+  }
+
+  function consumeQueue(b) {
+    if (b.queue && b.queue.length) {
+      if (--b.queue[0].count <= 0) b.queue.shift();
+    }
+  }
+
+  /* Kaserne/Belagerung bildet Einheiten aus (Warteschlange oder Dauer-Typ). */
   function trainAtBarracks(b, dt, def, p) {
     b.timer -= dt * p.prodMult;
     if (b.timer > 0) return;
     b.working = false; b.status = null;
 
     const pool = def.siege ? CFG.SIEGE_KEYS : CFG.SOLDIER_KEYS;
-    let type = pool.includes(b.trainType) ? b.trainType : pool[0];
+    const fallback = pool.includes(b.trainType) ? b.trainType : pool[0];
+    const sel = nextQueued(b, fallback);
+    if (!sel) { b.status = 'Warteschlange leer'; b.timer = 1.0; return; }
+    let type = pool.includes(sel.type) ? sel.type : fallback;
+
     const affordable = t => canAfford(p, CFG.SOLDIERS[t].cost);
     if (!affordable(type)) {
-      // KI weicht auf einen bezahlbaren Typ aus; Mensch sieht den Mangel
+      if (p.human && sel.fromQueue) { b.status = 'Rohstoffe fehlen'; b.timer = 1.0; return; }
       if (p.human) { b.status = 'Rohstoffe fehlen'; b.timer = 1.0; return; }
       const alt = pool.find(affordable);
       if (!alt) { b.status = 'Rohstoffe fehlen'; b.timer = 1.0; return; }
@@ -749,9 +943,35 @@ const Game = (() => {
 
     pay(p, CFG.SOLDIERS[type].cost);
     spawnSoldier(b.owner, b.x, b.y, type);
+    if (sel.fromQueue) consumeQueue(b);
     b.working = true;
     const tm = tribeOf(b.owner).bonus.trainMult || 1;
     b.timer = CFG.SOLDIERS[type].train * tm * (0.9 + Math.random() * 0.2);
+  }
+
+  /* Hafen baut Schiffe (Warteschlange; Fallback: Fischerboot). */
+  function buildAtHarbor(b, dt, def, p) {
+    b.timer -= dt * p.prodMult;
+    if (b.timer > 0) return;
+    b.working = false; b.status = null;
+
+    const sel = nextQueued(b, 'fischer');
+    // Ohne Auftrag nur begrenzt Fischerboote nachbauen
+    if (!sel.fromQueue) {
+      const nFisch = st.ships.filter(s => s.home === b.id && s.type === 'fischer').length;
+      if (nFisch >= 3) { b.status = 'Bereit'; b.timer = 3; return; }
+    }
+    let type = CFG.SHIP_KEYS.includes(sel.type) ? sel.type : 'fischer';
+    const ship = CFG.SHIPS[type];
+    if (!canAfford(p, ship.cost)) { b.status = 'Rohstoffe fehlen'; b.timer = 1.0; return; }
+    const spot = nearestWater(b.x, b.y, 3);
+    if (!spot) { b.status = 'Kein Wasser'; b.timer = 2; return; }
+
+    pay(p, ship.cost);
+    spawnShip(b.owner, spot.x, spot.y, type, b.id);
+    if (sel.fromQueue) consumeQueue(b);
+    b.working = true;
+    b.timer = ship.build * (0.9 + Math.random() * 0.2);
   }
 
   function findTree(b) {
@@ -793,9 +1013,26 @@ const Game = (() => {
   /* ------------------------------------------------ Einheiten-Takt */
 
   function updateUnits(dt) {
+    const temples = st.buildings.filter(b => b.alive && b.done && b.type === 'tempel');
+    const moralFor = u => {
+      for (const b of temples) if (b.owner === u.owner && Math.hypot(b.x + 0.5 - u.x, b.y + 0.5 - u.y) <= CFG.TEMPLE.radius) return CFG.TEMPLE.moral;
+      return 1;
+    };
     for (const u of st.units) {
       u.cd -= dt; u.scan -= dt;
       if (u.shot > 0) u.shot -= dt;
+      u.moralT = (u.moralT || 0) - dt;
+      if (u.moralT <= 0) { u.moralT = 0.7; u.moral = temples.length ? moralFor(u) : 1; }
+
+      // Einschiffen auf einen Transporter (eigener Befehl)
+      if (u.board) {
+        const s = st.ships.find(x => x.id === u.board);
+        if (!s || s.type !== 'transporter' || s.cargo.length >= CFG.SHIPS.transporter.capacity) { u.board = null; u.path = null; }
+        else if (Math.hypot(u.x - s.x, u.y - s.y) <= 1.6) {
+          u.removed = true; u.board = null; u.path = null; s.cargo.push(u);
+          continue;
+        } else { approach(u, s.x, s.y, dt); continue; }
+      }
 
       // Turm besetzen (eigener Marschbefehl auf eigenen Turm)
       if (u.tgGar) {
@@ -832,8 +1069,9 @@ const Game = (() => {
         }
       }
 
-      if (tgtU) { engage(u, tgtU.x, tgtU.y, dt, () => { hitUnit(tgtU, u.dmgU); }); continue; }
-      if (tgtB) { engage(u, tgtB.x + 0.5, tgtB.y + 0.5, dt, () => { hitBuilding(tgtB, u.dmgB); }); continue; }
+      const mor = u.moral || 1;
+      if (tgtU) { engage(u, tgtU.x, tgtU.y, dt, () => { hitUnit(tgtU, u.dmgU * mor); }); continue; }
+      if (tgtB) { engage(u, tgtB.x + 0.5, tgtB.y + 0.5, dt, () => { hitBuilding(tgtB, u.dmgB * mor); }); continue; }
       if (u.path) followPath(u, dt);
     }
     st.units = st.units.filter(u => u.hp > 0 && !u.removed);
@@ -935,6 +1173,7 @@ const Game = (() => {
     isEnemy, hasTerrainNear, canAfford, tribeOf, tribeCost,
     spawnSoldier, sallyGarrison, carrierCap, carriersBusy, needsTool,
     dispatchGeologe, geologeActive, setTypePrio,
+    shipAt, commandShip, boardUnits,
     get st() { return st; },
     idx, inB, walkable,
   };

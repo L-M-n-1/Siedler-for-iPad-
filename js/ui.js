@@ -18,6 +18,7 @@ const UI = (() => {
 
   let placing = null;          // Gebäudetyp im Platzierungsmodus
   let selected = [];           // ausgewählte Soldaten
+  let selectedShip = null;     // ausgewähltes Schiff
   let geoMode = false;         // Geologe-Zielmodus
   let ovOpen = false;          // Übersicht offen
   let ovTab = 'bestand';
@@ -336,6 +337,7 @@ const UI = (() => {
   function cancelModes() {
     placing = null;
     selected = [];
+    selectedShip = null;
     geoMode = false;
     document.querySelectorAll('.bbtn').forEach(x => x.classList.remove('on'));
     $('btn-army').classList.remove('on');
@@ -391,10 +393,15 @@ const UI = (() => {
         h += '</div></div>';
       }
       // Siedler
-      h += `<div class="ov-grp"><h4>Siedler</h4><div class="ov-goods">
+      const ships = (st.ships || []).filter(s => s.owner === 0);
+      const nFisch = ships.filter(s => s.type === 'fischer').length;
+      const nTrans = ships.filter(s => s.type === 'transporter').length;
+      h += `<div class="ov-grp"><h4>Siedler & Flotte</h4><div class="ov-goods">
         <span class="ov-good" title="Soldaten / Wohnraum">👥<b>${Game.countPop(0)}/${Game.maxPop(0)}</b></span>
         <span class="ov-good" title="Lastenträger unterwegs / verfügbar">🧺<b>${Game.carriersBusy(0)}/${Game.carrierCap(0)}</b></span>
         <span class="ov-good" title="Geologen unterwegs">🔍<b>${Game.geologeActive(0)}</b></span>
+        <span class="ov-good" title="Fischerboote">🚣<b>${nFisch}</b></span>
+        <span class="ov-good" title="Transportschiffe">⛵<b>${nTrans}</b></span>
       </div></div>`;
       // Militär
       const byType = {};
@@ -521,15 +528,39 @@ const UI = (() => {
         [{ k: null, icon: '🎲', name: 'Auto' }].concat(CFG.TOOL_KEYS.map(t => ({ k: t, icon: CFG.RES_INFO[t].icon, name: CFG.RES_INFO[t].name }))),
         () => b.toolType, v => { b.toolType = v; }));
     }
-    // Kaserne/Belagerung: Einheitentyp wählen
-    if (def.trains) {
-      const keys = def.siege ? CFG.SIEGE_KEYS : CFG.SOLDIER_KEYS;
-      body.appendChild(makeChooser('Ausbildung',
-        keys.map(t => ({ k: t, icon: CFG.SOLDIERS[t].icon, name: CFG.SOLDIERS[t].short })),
-        () => keys.includes(b.trainType) ? b.trainType : keys[0], v => { b.trainType = v; }));
+    // Kaserne/Belagerung/Hafen: Warteschlange (Typ + Anzahl)
+    if (def.trains || def.buildsShips) {
+      const ships = !!def.buildsShips;
+      const keys = ships ? CFG.SHIP_KEYS : (def.siege ? CFG.SIEGE_KEYS : CFG.SOLDIER_KEYS);
+      const infoOf = t => ships ? CFG.SHIPS[t] : CFG.SOLDIERS[t];
+      if (b._selType === undefined || !keys.includes(b._selType)) b._selType = keys[0];
+      if (b._selCount === undefined) b._selCount = 1;
+      body.appendChild(makeChooser(ships ? 'Schiff' : 'Einheit',
+        keys.map(t => ({ k: t, icon: infoOf(t).icon, name: infoOf(t).short })),
+        () => b._selType, v => { b._selType = v; }));
+
+      const row = document.createElement('div');
+      row.className = 'info-choose';
+      row.innerHTML = '<span class="info-lbl">Anzahl:</span>';
+      const seg = document.createElement('span'); seg.className = 'qty-seg';
+      const dec = document.createElement('button'); dec.textContent = '−';
+      const num = document.createElement('b'); num.className = 'qty-num'; num.textContent = b._selCount;
+      const inc = document.createElement('button'); inc.textContent = '+';
+      dec.onclick = () => { b._selCount = Math.max(1, b._selCount - 1); num.textContent = b._selCount; };
+      inc.onclick = () => { b._selCount = Math.min(50, b._selCount + 1); num.textContent = b._selCount; };
+      const add = document.createElement('button'); add.textContent = '➕ Einreihen'; add.className = 'qty-add';
+      add.onclick = () => {
+        b.queue.push({ type: b._selType, count: b._selCount });
+        if (b.timer > 5) b.timer = 0.2;   // sofort loslegen, wenn nur Fallback lief
+        updateInfoDyn(b);
+      };
+      for (const el of [dec, num, inc]) seg.appendChild(el);
+      row.appendChild(seg); row.appendChild(add);
+      body.appendChild(row);
+      const q = document.createElement('div'); q.id = 'info-queue'; body.appendChild(q);
     }
     // Produktionsgebäude: Priorität + Pause (Materialströme steuern)
-    if (def.interval || def.trains || def.makesTool) {
+    if (def.interval || def.trains || def.makesTool || def.buildsShips) {
       body.appendChild(makeChooser('Priorität',
         [{ k: 0, icon: '▽', name: 'Niedrig' }, { k: 1, icon: '◇', name: 'Normal' }, { k: 2, icon: '△', name: 'Hoch' }],
         () => b.prio ?? 1, v => { b.prio = v; }));
@@ -588,7 +619,7 @@ const UI = (() => {
         if ((b.garrison || 0) === 0) s += ' – <b>unbesetzt</b> (kein Gebiet)';
       }
       if (b.status) s += `<br>💤 ${b.status}`;
-      else if (def.interval || def.trains) s += '<br>✅ Arbeitet';
+      else if (def.interval || def.trains || def.buildsShips) s += '<br>✅ Arbeitet';
       const out = b.out && Object.entries(b.out).filter(([, n]) => n > 0);
       if (out && out.length) {
         s += '<br>📦 ' + out.map(([r, n]) => `${n}${CFG.RES_INFO[r].icon}`).join(' ') +
@@ -598,6 +629,24 @@ const UI = (() => {
     el.innerHTML = s;
     const sally = $('info-sally');
     if (sally) sally.style.display = (b.garrison || 0) > 0 ? '' : 'none';
+    renderQueue(b);
+  }
+
+  /* Warteschlangen-Liste (Kaserne/Belagerung/Hafen) mit Entfernen-Knöpfen. */
+  function renderQueue(b) {
+    const q = $('info-queue');
+    if (!q) return;
+    if (!b.queue || !b.queue.length) { q.innerHTML = '<div class="q-empty">Warteschlange leer</div>'; return; }
+    const ships = !!CFG.BUILDINGS[b.type].buildsShips;
+    const infoOf = t => ships ? CFG.SHIPS[t] : CFG.SOLDIERS[t];
+    q.innerHTML = '';
+    b.queue.forEach((e, i) => {
+      const row = document.createElement('div'); row.className = 'q-row';
+      row.innerHTML = `<span>${infoOf(e.type).icon} ${infoOf(e.type).short} ×${e.count}</span>`;
+      const del = document.createElement('button'); del.textContent = '✕'; del.className = 'q-del';
+      del.onclick = () => { b.queue.splice(i, 1); renderQueue(b); };
+      row.appendChild(del); q.appendChild(row);
+    });
   }
 
   function hideInfo() {
@@ -743,10 +792,37 @@ const UI = (() => {
       return;
     }
 
+    const wx = w.x / CFG.TS, wy = w.y / CFG.TS;
+
+    // Soldaten kommandiert: eigenes Transportschiff antippen = einschiffen
     if (selected.length) {
-      const res = Game.commandUnits(selected, w.x / CFG.TS, w.y / CFG.TS);
+      const ship = Game.shipAt(wx, wy);
+      if (ship && ship.owner === 0 && ship.type === 'transporter') {
+        if (Game.boardUnits(selected, ship)) toast('⛵ Soldaten schiffen ein');
+        cancelModes();
+        return;
+      }
+      const res = Game.commandUnits(selected, wx, wy);
       if (res && res.garrisoned) toast('🛡️ Soldaten besetzen den Turm');
       cancelModes();
+      return;
+    }
+
+    // Schiff ausgewählt: Ziel setzen
+    if (selectedShip) {
+      if (Game.commandShip(selectedShip, wx, wy)) {
+        toast(selectedShip.cargo && selectedShip.cargo.length ? '⛵ Kurs aufs Ufer – Truppen ausschiffen' : '⛵ Schiff segelt los');
+      } else toast('Kein Wasserweg dorthin');
+      selectedShip = null; hideBanner();
+      return;
+    }
+
+    // Eigenes Schiff antippen = auswählen
+    const ship = Game.shipAt(wx, wy);
+    if (ship && ship.owner === 0) {
+      selectedShip = ship;
+      const nm = CFG.SHIPS[ship.type].name;
+      showBanner(`⛵ ${nm} ausgewählt – tippe auf Wasser oder eine Küste`);
       return;
     }
 
@@ -754,7 +830,6 @@ const UI = (() => {
     const b = Game.buildingAt(tx, ty);
     if (b) { showInfo(b); return; }
 
-    const wx = w.x / CFG.TS, wy = w.y / CFG.TS;
     const squad = Game.st.units.filter(u =>
       u.owner === 0 && Math.hypot(u.x - wx, u.y - wy) < 2.2);
     if (squad.length) {
@@ -783,5 +858,6 @@ const UI = (() => {
   return {
     initSetup, initGameUI, updateHUD, toast,
     get selected() { return selected; },
+    get selectedShip() { return selectedShip; },
   };
 })();

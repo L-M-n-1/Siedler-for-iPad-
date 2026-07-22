@@ -113,21 +113,21 @@ const MapGen = (() => {
     return { w, h, terrain, trees, deposit, starts, preset: p };
   }
 
-  /* Versteckte Bergvorkommen: überwiegend Stein, Adern aus Eisen/Kohle,
-     seltene Gold-Cluster. -1 = kein Berg. Vom Geologen aufzudecken. */
+  /* Versteckte Bergvorkommen. Jede Bergkachel wird gewichtet gelost, sodass in
+     jedem Massiv Stein, Eisen und Kohle gemischt vorkommen; Gold ist selten und
+     bleibt (über Rauschen) in kleinen Adern geclustert. -1 = kein Berg. */
   function makeDeposits(rnd, w, h, terrain, p) {
     const dep = new Int8Array(w * h).fill(-1);
-    const nVein = makeNoise(rnd, w, 5);      // Eisen/Kohle-Adern
-    const nGold = makeNoise(rnd, w, 3.5);    // Gold-Cluster
+    const nGold = makeNoise(rnd, w, 3.2);    // Gold-Cluster (selten)
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = y * w + x;
         if (terrain[i] !== CFG.T.MOUNTAIN) continue;
-        const gv = nGold(x, y), vv = nVein(x, y);
-        if (gv > 0.80) dep[i] = CFG.DEP.GOLD;
-        else if (vv > 0.68) dep[i] = CFG.DEP.KOHLE;
-        else if (vv < 0.32) dep[i] = CFG.DEP.EISEN;
-        else dep[i] = CFG.DEP.STEIN;
+        // Gold nur in seltenen Cluster-Spitzen + kleine Zufallschance
+        if (nGold(x, y) > 0.86 && rnd() < 0.55) { dep[i] = CFG.DEP.GOLD; continue; }
+        // Rest gleichmäßig auf Stein/Eisen/Kohle verteilen → jedes Gebirge hat alle drei
+        const r = rnd();
+        dep[i] = r < 0.36 ? CFG.DEP.STEIN : r < 0.68 ? CFG.DEP.EISEN : CFG.DEP.KOHLE;
       }
     }
     return dep;
